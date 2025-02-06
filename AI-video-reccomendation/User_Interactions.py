@@ -11,12 +11,13 @@ user_interactions = {
 
 def compute_user_embeddings(user_id,interactions):
     if user_id not in interactions:
-        return np.array([0, 0, 0])
+        return np.zeros(512)
 
     likes = len(interactions[user_id]["likes"]) * 1.0
     comments = len(interactions[user_id]["comments"]) * 0.5
     total_watch_time = sum(interactions[user_id]["watch_time"].values())*0.01
     embedding = np.array([likes,comments,total_watch_time])
+    embedding = np.tile(embedding,171)[:512]
     return embedding
 
 
