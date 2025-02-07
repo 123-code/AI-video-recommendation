@@ -9,9 +9,6 @@ import google.generativeai as genai
 import random
 
 
-video_embeddings = {
-    "video":{"embedding":23,"metadata":{"title":"title","genre":"Action"}}
-}
 
 
 
@@ -73,13 +70,8 @@ def get_video_embedding(video_path, use_cuda=False, pooling_method="average"):
     if pooling_method == "average":
        video_embedding = average_pool_video_embedding(frame_embeddings)
        return video_embedding
-    else:
+    else: 
         raise ValueError("Unsupported pooling method. Only 'average' pooling is supported.")
-
-def get_random_videos():
-    selected_videos = random.sample(list(video_embeddings.keys()), min(3, len(video_embeddings)))
-    return [video_embeddings[video]["metadata"] for video in selected_videos]
-
 
 
 

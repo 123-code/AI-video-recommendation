@@ -1,21 +1,23 @@
+import random
 from flask import Flask, request, jsonify
 import json
 from VideoMetadata import generate_video, video_metadata, video_embeddings
 from reccomend import recomend_videos
 from User_Interactions import user_interactions, compute_user_embeddings
-from main import get_video_embedding,get_random_videos
-
+from main import get_video_embedding
+from flask_cors import CORS
 
 app = Flask(__name__)
-generate_video()
-
+CORS(app)
+video_embeddings = generate_video()
+ 
 
 @app.route("/next_video",methods=['GET'])
 def next_video():
     user_id = request.args.get('user_id')
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
-    
+     
     try:
         user_embeddings = compute_user_embeddings(user_id,user_interactions)
         reccomendations = recomend_videos(user_id,video_embeddings,{user_id:user_embeddings})
@@ -63,9 +65,10 @@ def update_interaction():
     return jsonify({'message': 'Interaction updated successfully'})
 
 @app.route("/random_videos",methods=['GET'])
-def get_videos():
-    reccomendations = get_random_videos()
-    return jsonify(reccomendations)
+def get_random_videos():
+    selected_videos = random.sample(list(video_embeddings.keys()), min(3, len(video_embeddings)))
+    return jsonify([video_embeddings[video]["metadata"] for video in selected_videos])
+
 
 
     
