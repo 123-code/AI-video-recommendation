@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type React } from "react"
+import { useState, useEffect,type React } from "react"
 import { Heart, MessageCircle, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -29,6 +29,24 @@ const mockVideos = [
 export default function TikTokFeed() {
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0)
   const [showComments, setShowComments] = useState(false)
+  const [videos, setVideos] = useState([]);
+
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const response = await fetch('/api/videos'); //This assumes you have a backend API endpoint at /api/videos
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        setVideos(data);
+      } catch (error) {
+        console.error("Error fetching videos:", error);
+      }
+    };
+
+    fetchVideos();
+  }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget
