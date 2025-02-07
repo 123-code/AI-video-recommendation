@@ -1,5 +1,6 @@
 import os
 import time
+import pathlib
 import google.generativeai as genai
 from main import get_video_embedding
 
@@ -10,27 +11,40 @@ from main import get_video_embedding
 video_metadata = {}
 video_embeddings = {}
 
+directory = "videos"
 
 def generate_video():
-    
-    api_key = "AIzaSyBuZRAro4cg9q3WQdj9i9UkvEHYZ6PUtuA"
-    genai.configure(api_key=api_key) 
-    video_key = f"video{len(video_metadata)+1}"
-    video_embedding = get_video_embedding(f"{video_key}.mp4",use_cuda=False)
-    video_embeddings[video_key] = {"embedding":video_embedding,"metadata":{}}
-    video_embeddings[video_key]["metadata"]["title"] = "title"
-    video_embeddings[video_key]["metadata"]["genre"] = "genre"
-    video_embeddings[video_key]["metadata"]["file_path"] = f"{video_key}.mp4"
+    # Make sure the videos directory exists.
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
-    video_data = {
-        "title":"title",
-        "file_path": f"{video_key}.mp4",
-        "genre":"genre",
-    }
 
-    video_metadata[video_key] = video_data
-    return video_key,video_embedding
-generate_video()
+    for x in pathlib.Path(directory).glob("*.mp4"):
+        video_key = x.stem  # Use the filename (without extension) as the key
+        video_path = str(x) # Use full path for every video being processed.
+
+        video_embedding = get_video_embedding(video_path, use_cuda=False)
+
+        video_embeddings[video_key] = {"embedding": video_embedding, "metadata": {}}
+        video_embeddings[video_key]["metadata"]["title"] = "title" # Update with your title retrieval logic or user input
+        video_embeddings[video_key]["metadata"]["genre"] = "genre" # Update with actual genre information
+        video_embeddings[video_key]["metadata"]["file_path"] = str(x)
+
+        video_data = {
+            "title": "title",  #Same as above; use actual title.
+            "file_path": str(x),
+            "genre": "genre",  # Use actual genre.
+        }
+
+        video_metadata[video_key] = video_data
+
+    # Return all generated embeddings, not just the last.    
+    return video_embeddings 
+
+video_embeddings = generate_video() # Now video_embeddings will store all embeddings.
+print(video_metadata)
+
+print(video_embeddings)
 
     # label the video
     #video_file = f"content/{video_key}.mp4"

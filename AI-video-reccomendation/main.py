@@ -79,15 +79,6 @@ def get_video_embedding(video_path, use_cuda=False, pooling_method="average"):
     else:
         raise ValueError("Unsupported pooling method. Only 'average' pooling is supported.")
 
-if __name__ == '__main__':
-    video_path = 'video.mp4'  # Replace with your video path
-    try:
-        video_embedding1 = get_video_embedding(video_path, use_cuda=True)
-        video_embedding2 = get_video_embedding("video1.mp4",use_cuda=True)
-        similarity_score = cosine_similarity(video_embedding1.reshape(1, -1), video_embedding2.reshape(1, -1))
-        print("Cosine Similarity:", similarity_score[0][0])
 
-    except FileNotFoundError as e:
-        print(e)
 
 
