@@ -3,7 +3,7 @@ import json
 from VideoMetadata import generate_video, video_metadata, video_embeddings
 from reccomend import recomend_videos
 from User_Interactions import user_interactions, compute_user_embeddings
-from main import get_video_embedding
+from main import get_video_embedding,get_random_videos
 
 
 app = Flask(__name__)
@@ -61,6 +61,11 @@ def update_interaction():
         return jsonify({'error': 'Invalid interaction type'}), 400
 
     return jsonify({'message': 'Interaction updated successfully'})
+
+@app.route("/random_videos",methods=['GET'])
+def get_videos():
+    reccomendations = get_random_videos()
+    return jsonify(reccomendations)
 
 
     

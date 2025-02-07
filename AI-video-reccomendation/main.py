@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 #from sklearn.metrics.pairwise import cosine_similarity
 import google.generativeai as genai
-
+import random
 
 
 video_embeddings = {
@@ -14,9 +14,6 @@ video_embeddings = {
 }
 
 
-
-def get_video_metadata():
-    pass
 
 def extract_frame_embeddings(video_path, model, transform, device):
     """Extracts embeddings from each frame of a video using a pretrained model."""
@@ -78,6 +75,10 @@ def get_video_embedding(video_path, use_cuda=False, pooling_method="average"):
        return video_embedding
     else:
         raise ValueError("Unsupported pooling method. Only 'average' pooling is supported.")
+
+def get_random_videos():
+    selected_videos = random.sample(list(video_embeddings.keys()), min(3, len(video_embeddings)))
+    return [video_embeddings[video]["metadata"] for video in selected_videos]
 
 
 
