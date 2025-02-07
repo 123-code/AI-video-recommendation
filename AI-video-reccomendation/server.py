@@ -1,16 +1,17 @@
 import random
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import json
 from VideoMetadata import generate_video, video_metadata, video_embeddings
 from reccomend import recomend_videos
 from User_Interactions import user_interactions, compute_user_embeddings
 from main import get_video_embedding
 from flask_cors import CORS
+import os 
 
 app = Flask(__name__)
 CORS(app)
 video_embeddings = generate_video()
- 
+VIDEOS_DIR = os.path.join(os.getcwd(), "videos")
 
 @app.route("/next_video",methods=['GET'])
 def next_video():
@@ -64,11 +65,19 @@ def update_interaction():
 
     return jsonify({'message': 'Interaction updated successfully'})
 
-@app.route("/random_videos",methods=['GET'])
+@app.route("/random_videos", methods=['GET'])
 def get_random_videos():
     selected_videos = random.sample(list(video_embeddings.keys()), min(3, len(video_embeddings)))
     return jsonify([video_embeddings[video]["metadata"] for video in selected_videos])
 
+
+@app.route("/videos/<filename>", methods=['GET'])
+def serve_video(filename):
+    try:
+        # Serve the video file from the 'videos' directory
+        return send_from_directory(VIDEOS_DIR, filename)
+    except FileNotFoundError:
+        return jsonify({'error': 'Video not found'}), 404
 
 
     

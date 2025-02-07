@@ -11,17 +11,16 @@ from main import get_video_embedding
 video_metadata = {}
 video_embeddings = {}
 
-directory = "videos"
 
+videos_directory = os.path.join(os.getcwd(), "videos")
 def generate_video():
     # Make sure the videos directory exists.
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    if not os.path.exists(videos_directory):
+        os.makedirs(videos_directory)
 
-
-    for x in pathlib.Path(directory).glob("*.mp4"):
+    for x in pathlib.Path(videos_directory).glob("*.mp4"):
         video_key = x.stem  # Use the filename (without extension) as the key
-        video_path = str(x) # Use full path for every video being processed.
+        video_path = str(x.resolve())  # Use the absolute path for the video file
 
         video_embedding = get_video_embedding(video_path, use_cuda=False)
 
@@ -29,6 +28,8 @@ def generate_video():
         video_embeddings[video_key]["metadata"]["title"] = "title" # Update with your title retrieval logic or user input
         video_embeddings[video_key]["metadata"]["genre"] = "genre" # Update with actual genre information
         video_embeddings[video_key]["metadata"]["file_path"] = str(x)
+        video_embeddings[video_key]["metadata"]["file_path"] = x.name  # Only the filename
+
 
         video_data = {
             "title": "title",  #Same as above; use actual title.
@@ -39,12 +40,7 @@ def generate_video():
         video_metadata[video_key] = video_data
 
     # Return all generated embeddings, not just the last.    
-    return video_embeddings 
-
-video_embeddings = generate_video() # Now video_embeddings will store all embeddings.
-print(video_metadata)
-
-print(video_embeddings)
+    return video_embeddings
 
     # label the video
     #video_file = f"content/{video_key}.mp4"

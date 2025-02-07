@@ -5,6 +5,7 @@ import { Heart, MessageCircle, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import VideoPlayer from './video-player';
 
+
 export default function TikTokFeed() {
   const [videos, setVideos] = useState([]);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0)
@@ -18,6 +19,7 @@ export default function TikTokFeed() {
  
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget
+    
     const scrollPosition = container.scrollTop
     const videoHeight = container.clientHeight
     const newIndex = Math.round(scrollPosition / videoHeight)
@@ -30,7 +32,8 @@ export default function TikTokFeed() {
     <div className="h-[100vh] overflow-y-scroll snap-y snap-mandatory" onScroll={handleScroll}>
       {videos.map((video, index) => (
         <div key={index} className="h-full w-full snap-start relative">
-          <VideoPlayer videoSrc={video.file_path} />
+         <VideoPlayer videoSrc={`http://127.0.0.1:5000/videos/${video.file_path}`} />
+
           <div className="absolute bottom-4 left-4 right-12">
             <p className="font-bold">username</p>
             <p className="text-sm">description</p>
