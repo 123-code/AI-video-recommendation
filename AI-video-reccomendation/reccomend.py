@@ -6,7 +6,7 @@ from User_Interactions import user_embeddings
 
 
 def recomend_videos(user_id,video_embeddings,user_embeddings):
-    user_embedding = user_embeddings[user_id]
+    user_embedding = user_embeddings
     reccomendations = {}
 
     # for now iterates through all the video embeddings 

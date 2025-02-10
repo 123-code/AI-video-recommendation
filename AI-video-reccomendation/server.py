@@ -9,23 +9,30 @@ from flask_cors import CORS
 import os 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}) 
 video_embeddings = generate_video()
 VIDEOS_DIR = os.path.join(os.getcwd(), "videos")
 
 @app.route("/next_video",methods=['GET'])
 def next_video():
     user_id = request.args.get('user_id')
+    print("a",user_id)
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
      
     try:
         user_embeddings = compute_user_embeddings(user_id,user_interactions)
-        reccomendations = recomend_videos(user_id,video_embeddings,{user_id:user_embeddings})
+        reccomendations = recomend_videos(user_id,video_embeddings,user_embeddings)
         print(reccomendations)
         if reccomendations:
-            next_video_id = reccomendations[0][0]
-            return jsonify({'video_id': next_video_id})
+            return jsonify([
+              {
+                'video_id': video[0],
+                'similarity_score': video[1],
+                'metadata': video_embeddings[video[0]]['metadata']
+              }
+              for video in reccomendations
+            ])
         else:
             return jsonify({'message': 'No recommendations available'}), 200
         
@@ -34,47 +41,58 @@ def next_video():
     
 
 
-@app.route("/update_interaction",methods=["POST"])
+@app.route("/update_interaction", methods=["POST"])
 def update_interaction():
-    data = request.get_json()
-    user_id = data.get('user_id')
-    video_id = data.get('video_id')
-    interaction_type = data.get('interaction_type')
-    value = data.get('value')
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        video_id = data.get('video_id')
+        interaction_type = data.get('interaction_type')
+        value = data.get('value')
 
-    if not all([user_id,video_id,interaction_type]):
-        return jsonify({'error': 'Missing required parameters'}), 400
-    
+        if user_id not in user_interactions:
+            print(f"User {user_id} not found in user_interactions")
+            return jsonify({'error': 'User not found'}), 404
 
-    if user_id not in user_interactions:
-        user_interactions[user_id] = {
-            "likes": [],
-            "comments": {},
-            "watch_time": {}
-        }
+        if video_id in user_interactions[user_id]['watch_time']:
+            user_interactions[user_id]['watch_time'][video_id] += value
+        else:
+            user_interactions[user_id]["watch_time"][video_id] = value
 
-    if interaction_type == 'like':
-        if video_id not in user_interactions[user_id]['likes']:
-            user_interactions[user_id]['likes'].append(video_id)
-    elif interaction_type == 'comment':
-        user_interactions[user_id]['comments'][video_id] = value
-    elif interaction_type == 'watch_time':
-        user_interactions[user_id]['watch_time'][video_id] = value
-    else:
-        return jsonify({'error': 'Invalid interaction type'}), 400
+        if not all([user_id, video_id, interaction_type]):
+            print(user_id)
+            print(video_id)
+            print(interaction_type)
+            print("Missing required parameters")
+            return jsonify({'error': 'Missing required parameters'}), 400
+        print(user_interactions)
 
-    return jsonify({'message': 'Interaction updated successfully'})
+        return jsonify({'message': 'Interaction updated successfully'})
+
+    except Exception as e:
+        print(f"Error in /update_interaction: {e}")
+        return jsonify({'error': f'Internal server error: {e}'}), 500
+
 
 @app.route("/random_videos", methods=['GET'])
 def get_random_videos():
+    #for video_id,video_data in video_embeddings.items():
     selected_videos = random.sample(list(video_embeddings.keys()), min(3, len(video_embeddings)))
-    return jsonify([video_embeddings[video]["metadata"] for video in selected_videos])
+    response = []
+    for video_id in selected_videos:
+        video_data = { 
+            'video_id': video_id,
+            'metadata': video_embeddings[video_id]['metadata']
+        }
+        response.append(video_data)
+
+    return jsonify(response)
 
 
 @app.route("/videos/<filename>", methods=['GET'])
 def serve_video(filename):
     try:
-        # Serve the video file from the 'videos' directory
+
         return send_from_directory(VIDEOS_DIR, filename)
     except FileNotFoundError:
         return jsonify({'error': 'Video not found'}), 404
