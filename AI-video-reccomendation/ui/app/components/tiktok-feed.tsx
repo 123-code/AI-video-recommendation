@@ -1,39 +1,48 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Heart, MessageCircle, Share2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import VideoPlayer from './video-player';
-
+import { useState, useEffect } from "react";
+import { Heart, MessageCircle, Share2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import VideoPlayer from "./video-player";
 
 interface Video {
   video_id: string;
   metadata: {
     file_path: string;
+    genre?: string; // Add genre and make it optional
+    title?: string; // Add title and make it optional
   };
   // Add other properties as needed based on your API response
 }
 
 export default function TikTokFeed() {
-  const [videos, setVideos] = useState<Video[]>([]); // Ensure type safety
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0)
-  const [showComments, setShowComments] = useState(false)
-  const [videoTime, setVideoTime] = useState<{[videoId: string]: number}>({})
-  const [recommendedVideos,setRecommendedVideos] = useState<Video[]>([])
-
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [showComments, setShowComments] = useState(false);
+  const [videoTime, setVideoTime] = useState<{ [videoId: string]: number }>({});
+  const [recommendedVideos, setRecommendedVideos] = useState<Video[]>([]);
+  const [interactionRecorded, setInteractionRecorded] = useState(false);
+  const [isFetching, setIsFetching] = useState(false); // Track if a fetch is in progress
 
   useEffect(() => {
-    // Initial fetch for videos
-    fetch('http://127.0.0.1:5000/next_video?user_id=user1')
-      .then(res => res.json())
-      .then(data => {
-        setVideos(data);
-      })
-      .catch(error => console.error("Error fetching initial videos:", error));
+    fetchNextVideo(); // Initial fetch for videos
   }, []);
 
+  const fetchNextVideo = () => {
+    if (isFetching) return; // Prevent multiple fetches
+    setIsFetching(true);
 
-
+    fetch("http://127.0.0.1:5000/next_video?user_id=user1")
+      .then((res) => res.json())
+      .then((data) => {
+        setRecommendedVideos((prevVideos) => [...prevVideos, data]); // Append new videos
+        setIsFetching(false);
+      })
+      .catch((error) => {
+        console.error("Error fetching videos:", error);
+        setIsFetching(false);
+      });
+  };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
@@ -43,42 +52,59 @@ export default function TikTokFeed() {
 
     if (newIndex !== currentVideoIndex) {
       // Send time spent on previous video to server
-      if (videos.length > 0 && currentVideoIndex < videos.length) {
-        const videoId = videos[currentVideoIndex].video_id;
-        const timeWatched = videoTime[videoId];
+      if (recommendedVideos.length > 0 && currentVideoIndex < recommendedVideos.length) {
+        const videoId = recommendedVideos[currentVideoIndex].video_id;
+        const timeWatched = videoTime[videoId] || 0; // Default to 0 if undefined
 
-        if (videoId && timeWatched) {
+        if (videoId && timeWatched > 0) {
           fetch(`http://127.0.0.1:5000/update_interaction`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              user_id: 'user1',
+              user_id: "user1",
               video_id: videoId,
-              interaction_type: 'watch_time',
+              interaction_type: "watch_time",
               value: timeWatched,
             }),
           })
-            .catch(error => console.error("Error updating interaction:", error));
+            .then(() => {
+               setInteractionRecorded(false);
+              // Only fetch new recommendations after interaction is updated
+              fetchNextVideo();
+            })
+            .catch((error) => console.error("Error updating interaction:", error));
         }
       }
-       setCurrentVideoIndex(newIndex);
-      // Fetch new recommendations
-      fetch('http://127.0.0.1:5000/next_video?user_id=user1')
-        .then(response => response.json())
-        .then(data => {
-          setRecommendedVideos(data);
-        })
-        .catch(error => console.error("Error fetching recommended videos:", error));
+
+      setCurrentVideoIndex(newIndex);
+      setInteractionRecorded(false); // Reset interaction flag when scrolling
     }
   };
 
-  const handleTimeUpdate = (videoIndex: number, currentTime: number) => {
-    if (videos.length > 0 && videoIndex < videos.length) {
-        const videoId = videos[videoIndex].video_id;
-        setVideoTime(prevVideoTime => ({ ...prevVideoTime, [videoId]: currentTime }));
-    }
-  }
 
+  const handleTimeUpdate = (videoIndex: number, currentTime: number) => {
+    if (recommendedVideos.length > 0 && videoIndex < recommendedVideos.length) {
+      const videoId = recommendedVideos[videoIndex].video_id;
+      setVideoTime((prevVideoTime) => ({
+        ...prevVideoTime,
+        [videoId]: currentTime,
+      }));
+    }
+  };
+
+  const handleVideoInteraction = (videoIndex: number) => {
+     if (recommendedVideos.length > 0 && videoIndex < recommendedVideos.length) {
+      const videoId = recommendedVideos[videoIndex].video_id;
+      const timeWatched = videoTime[videoId] || 0;
+
+      // Define a minimum watch time (e.g., 2 seconds)
+      const MINIMUM_WATCH_TIME = 2;
+
+      if (timeWatched >= MINIMUM_WATCH_TIME) {
+        setInteractionRecorded(true);
+      }
+    }
+  };
 
   return (
     <div className="h-[100vh] overflow-y-scroll snap-y snap-mandatory" onScroll={handleScroll}>
@@ -87,11 +113,16 @@ export default function TikTokFeed() {
           <VideoPlayer
             videoSrc={`http://127.0.0.1:5000/videos/${video.metadata.file_path}`}
             videoId={video.video_id}
-            onTimeUpdate={(currentTime: number) => handleTimeUpdate(videos.length + index, currentTime)}
+            onTimeUpdate={(currentTime: number) => {
+              handleTimeUpdate(index, currentTime);
+              handleVideoInteraction(index); // Check for interaction on every time update
+            }}
+            playing={index === currentVideoIndex} // Control playing state
           />
           <div className="absolute bottom-4 left-4 right-12">
             <p className="font-bold">username</p>
-            <p className="text-sm">description</p>
+            <p className="text-sm">{video.metadata.title || "No Title"}</p>
+            <p className="text-sm">{video.metadata.genre || "No Genre"}</p>
           </div>
           <div className="absolute bottom-20 right-2 flex flex-col items-center space-y-4">
             <Button variant="ghost" size="icon" className="rounded-full bg-gray-800 text-white">
@@ -131,5 +162,5 @@ export default function TikTokFeed() {
         </div>
       ))}
     </div>
-  )
+  );
 }

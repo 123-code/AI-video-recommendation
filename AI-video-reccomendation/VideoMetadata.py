@@ -39,9 +39,11 @@ def generate_video():
 
         video_metadata[video_key] = video_data
 
-    # Return all generated embeddings, not just the last.    
+    # Return all generated embeddings, not just the last.   
+    print(video_embeddings)
     return video_embeddings
 
+generate_video()
     # label the video
     #video_file = f"content/{video_key}.mp4"
    # video_file = "city.mp4"

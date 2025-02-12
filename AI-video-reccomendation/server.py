@@ -2,42 +2,57 @@ import random
 from flask import Flask, request, jsonify, send_from_directory
 import json
 from VideoMetadata import generate_video, video_metadata, video_embeddings
-from reccomend import recomend_videos
+from reccomend import recommend_videos
 from User_Interactions import user_interactions, compute_user_embeddings
 from main import get_video_embedding
 from flask_cors import CORS
 import os 
+import numpy as np
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}) 
 video_embeddings = generate_video()
 VIDEOS_DIR = os.path.join(os.getcwd(), "videos")
 
-@app.route("/next_video",methods=['GET'])
+
+user_interactions = {
+    "user1":{
+    "likes":["video1","video2"],
+    "comments":{"video1": "Great video!", "video2": "Interesting content."},
+    "watch_time": {"video1": 30, "video3": 120}
+    }
+}
+
+@app.route("/next_video", methods=['GET'])
 def next_video():
     user_id = request.args.get('user_id')
-    print("a",user_id)
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
-     
+
     try:
-        user_embeddings = compute_user_embeddings(user_id,user_interactions)
-        reccomendations = recomend_videos(user_id,video_embeddings,user_embeddings)
-        print(reccomendations)
-        if reccomendations:
-            return jsonify([
-              {
-                'video_id': video[0],
-                'similarity_score': video[1],
-                'metadata': video_embeddings[video[0]]['metadata']
-              }
-              for video in reccomendations
-            ])
+        user_embedding = compute_user_embeddings(user_id, user_interactions)
+        recommendations = recommend_videos(user_id, video_embeddings, user_embedding)
+
+        if recommendations:
+            # Sort recommendations by similarity score in descending order
+            recommendations.sort(key=lambda item: item[1], reverse=True)  
+
+            # Get the video with the highest similarity score
+            best_video = recommendations[0]
+
+            # Return only the best video
+            return jsonify({
+                'video_id': best_video[0],
+                'similarity_score': best_video[1],
+                'metadata': video_embeddings[best_video[0]]['metadata']
+            })
         else:
             return jsonify({'message': 'No recommendations available'}), 200
-        
+
     except KeyError:
         return jsonify({'error': 'User not found'}), 404
+    except IndexError: #handles empty reccomendations
+        return jsonify({'message': 'No recommendations available'}), 200
     
 
 

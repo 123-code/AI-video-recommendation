@@ -1,32 +1,52 @@
 // video-player.tsx
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 interface VideoPlayerProps {
   videoSrc: string;
   onTimeUpdate?: (currentTime: number) => void;
+  playing: boolean; // Added prop
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate }) => {
-  const [currentTime, setCurrentTime] = React.useState(0);
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playing }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const video = e.currentTarget;
-    setCurrentTime(video.currentTime);
-    if (onTimeUpdate) {
-      onTimeUpdate(video.currentTime);
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      if (onTimeUpdate) {
+        onTimeUpdate(video.currentTime);
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+
+    // Play/Pause based on 'playing' prop
+    if (playing) {
+      video.play().catch(error => {
+        console.error("Autoplay failed:", error);
+      });
+    } else {
+      video.pause();
     }
-  }
+
+    return () => {
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [videoSrc, onTimeUpdate, playing]);
 
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <video
+        ref={videoRef}
         src={videoSrc}
         controls={true}
-        autoPlay
+        autoPlay={playing} // Conditionally autoplay
         loop
         muted
         playsInline
-        onTimeUpdate={handleTimeUpdate}
         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
       />
     </div>
