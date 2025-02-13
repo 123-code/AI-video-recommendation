@@ -34,13 +34,13 @@ def next_video():
         recommendations = recommend_videos(user_id, video_embeddings, user_embedding)
 
         if recommendations:
-            # Sort recommendations by similarity score in descending order
+           
             recommendations.sort(key=lambda item: item[1], reverse=True)  
 
-            # Get the video with the highest similarity score
+ 
             best_video = recommendations[0]
 
-            # Return only the best video
+
             return jsonify({
                 'video_id': best_video[0],
                 'similarity_score': best_video[1],
@@ -51,7 +51,7 @@ def next_video():
 
     except KeyError:
         return jsonify({'error': 'User not found'}), 404
-    except IndexError: #handles empty reccomendations
+    except IndexError: 
         return jsonify({'message': 'No recommendations available'}), 200
     
 

@@ -20,22 +20,38 @@ export default function TikTokFeed() {
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showComments, setShowComments] = useState(false);
   const [videoTime, setVideoTime] = useState<{ [videoId: string]: number }>({});
+  const [usingRandomVideos, setUsingRandomVideos] = useState(true);
   const [recommendedVideos, setRecommendedVideos] = useState<Video[]>([]);
   const [interactionRecorded, setInteractionRecorded] = useState(false);
   const [isFetching, setIsFetching] = useState(false); // Track if a fetch is in progress
 
   useEffect(() => {
-    fetchNextVideo(); // Initial fetch for videos
+    fetchInitialVideos();
   }, []);
 
+
+  const fetchInitialVideos = ()=>{
+    setIsFetching(true);
+    fetch("http://127.0.0.1:5000/random_videos?user_id=user1&count=3")
+      .then((res) => res.json())
+      .then((data) => {
+        setVideos(data);
+        setIsFetching(false);
+      })
+      .catch((error) => {
+        console.error("Error fetching initial videos:", error);
+        setIsFetching(false);
+      });
+  }
+
   const fetchNextVideo = () => {
-    if (isFetching) return; // Prevent multiple fetches
+    if (isFetching) return; 
     setIsFetching(true);
 
     fetch("http://127.0.0.1:5000/next_video?user_id=user1")
       .then((res) => res.json())
       .then((data) => {
-        setRecommendedVideos((prevVideos) => [...prevVideos, data]); // Append new videos
+        setRecommendedVideos((prevVideos) => [...prevVideos, data]); 
         setIsFetching(false);
       })
       .catch((error) => {
@@ -51,7 +67,14 @@ export default function TikTokFeed() {
     const newIndex = Math.round(scrollPosition / videoHeight);
 
     if (newIndex !== currentVideoIndex) {
-      // Send time spent on previous video to server
+      setCurrentVideoIndex(newIndex);
+
+      if(usingRandomVideos && newIndex === videos.length - 1){
+        setUsingRandomVideos(false);
+        fetchNextVideo();
+      }
+
+
       if (recommendedVideos.length > 0 && currentVideoIndex < recommendedVideos.length) {
         const videoId = recommendedVideos[currentVideoIndex].video_id;
         const timeWatched = videoTime[videoId] || 0; // Default to 0 if undefined
@@ -69,7 +92,7 @@ export default function TikTokFeed() {
           })
             .then(() => {
                setInteractionRecorded(false);
-              // Only fetch new recommendations after interaction is updated
+      
               fetchNextVideo();
             })
             .catch((error) => console.error("Error updating interaction:", error));
@@ -108,7 +131,7 @@ export default function TikTokFeed() {
 
   return (
     <div className="h-[100vh] overflow-y-scroll snap-y snap-mandatory" onScroll={handleScroll}>
-      {recommendedVideos.map((video, index) => (
+      {videos.map((video, index) => (
         <div key={`recommended-${video.video_id}`} className="h-full w-full snap-start relative">
           <VideoPlayer
             videoSrc={`http://127.0.0.1:5000/videos/${video.metadata.file_path}`}
