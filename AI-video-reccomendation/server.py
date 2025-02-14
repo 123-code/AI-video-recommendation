@@ -1,118 +1,239 @@
+import logging
 import random
-from flask import Flask, request, jsonify, send_from_directory
-import json
-from VideoMetadata import generate_video, video_metadata, video_embeddings
-from reccomend import recommend_videos
-from User_Interactions import user_interactions, compute_user_embeddings
-from main import get_video_embedding
-from flask_cors import CORS
-import os 
 import numpy as np
+import cv2
+import torch
+import torchvision.models as models
+import torchvision.transforms as transforms
+from PIL import Image
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+import os
+import json
+from sklearn.metrics.pairwise import cosine_similarity
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}) 
-video_embeddings = generate_video()
+CORS(app)
+
+
 VIDEOS_DIR = os.path.join(os.getcwd(), "videos")
+EMBEDDING_DIM = 512  
+DEFAULT_EMBEDDING = np.zeros(EMBEDDING_DIM)
+ALPHA = 0.1 
 
 
-user_interactions = {
-    "user1":{
-    "likes":["video1","video2"],
-    "comments":{"video1": "Great video!", "video2": "Interesting content."},
-    "watch_time": {"video1": 30, "video3": 120}
-    }
-}
+video_embeddings = {} 
+user_embeddings = {} 
+
+user_interactions = {}
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+resnet = models.resnet18(
+    weights=models.ResNet18_Weights.DEFAULT) 
+
+model = torch.nn.Sequential(*list(resnet.children())[:-1])
+model = model.to(device)
+model.eval() 
+
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  
+    transforms.ToTensor(),
+
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
+])
+
+
+
+def extract_frame_embeddings(video_path, model, transform, device):
+    """Extracts embeddings from each frame of a video using a pretrained model."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"Could not open video: {video_path}")
+
+    frame_embeddings = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = Image.fromarray(frame)
+
+
+        frame = transform(frame).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            embedding = model(
+                frame).squeeze().cpu().numpy()  
+
+
+            if embedding.ndim == 4:
+                embedding = embedding.reshape(-1)
+
+            frame_embeddings.append(embedding)
+
+    cap.release()
+    return np.array(frame_embeddings)
+
+
+def average_pool_video_embedding(frame_embeddings):
+    """Averages the frame embeddings to create a single video embedding."""
+    return np.mean(frame_embeddings, axis=0)
+
+
+def get_video_embedding(video_path):
+    """Gets the pre-computed video embedding, or computes it if it doesn't exist."""
+    video_filename = os.path.basename(video_path)
+    video_id = os.path.splitext(
+        video_filename)[0]  
+
+    if video_id not in video_embeddings:
+        try:
+            frame_embeddings = extract_frame_embeddings(
+                video_path, model, transform, device)
+            if len(frame_embeddings) == 0:
+
+                video_embedding = np.zeros(EMBEDDING_DIM)
+            else:
+                video_embedding = average_pool_video_embedding(
+                    frame_embeddings)
+
+            video_embeddings[video_id] = {
+                'embedding': video_embedding,
+                'metadata': {'title': f'Video {video_id}', 'genre': 'Unknown', 'file_path': f'videos/{video_filename}'}
+            }
+        except Exception as e:
+            logging.error(
+                f"Error generating embedding for video {video_id}: {e}")
+            return None  
+
+    return video_embeddings[video_id]['embedding']
+
+
+def update_user_embedding(user_id, video_id, interaction_type, value):
+    if video_id not in video_embeddings:
+      return jsonify({'error': 'video_id does not exist'}), 404
+
+    video_embedding = video_embeddings[video_id]['embedding']
+    if user_id not in user_embeddings:
+        user_embeddings[user_id] = np.zeros(
+            EMBEDDING_DIM)  
+    old_embedding = user_embeddings[user_id]
+
+    if interaction_type == 'watch_time':
+        update = ALPHA * value * (video_embedding - old_embedding)
+
+    elif interaction_type == 'like':
+        update = ALPHA * (video_embedding - old_embedding)
+
+    elif interaction_type == 'comment':
+        update = ALPHA * (video_embedding - old_embedding)
+
+    else:
+      return jsonify({'error': 'invalid interaction_type'}), 400
+    user_embeddings[user_id] = old_embedding + update
+
 
 @app.route("/next_video", methods=['GET'])
 def next_video():
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'user_id is required'}), 400
+  user_id = request.args.get('user_id')
+  if not user_id:
+    return jsonify({'error': 'user_id is required'}), 400
 
-    try:
-        user_embedding = compute_user_embeddings(user_id, user_interactions)
-        recommendations = recommend_videos(user_id, video_embeddings, user_embedding)
+  if user_id not in user_embeddings:
 
-        if recommendations:
-           
-            recommendations.sort(key=lambda item: item[1], reverse=True)  
+    user_embeddings[user_id] = DEFAULT_EMBEDDING.copy()
+
+  user_embedding = user_embeddings[user_id]
+
+
+  video_ids = list(video_embeddings.keys())
+
+  video_embeds = [video_embeddings[v_id]['embedding'].tolist()
+                  for v_id in video_ids]
+  user_embedding = user_embedding.reshape(
+      1, -1) 
+  similarities = cosine_similarity(user_embedding, video_embeds)[0]
 
  
-            best_video = recommendations[0]
+  sorted_indices = np.argsort(similarities)[::-1]
+  if not len(sorted_indices):
+    return jsonify({'message': 'No recommendations available'}), 200
+  best_video_id = video_ids[sorted_indices[0]]
+  best_score = similarities[sorted_indices[0]]
 
-
-            return jsonify({
-                'video_id': best_video[0],
-                'similarity_score': best_video[1],
-                'metadata': video_embeddings[best_video[0]]['metadata']
-            })
-        else:
-            return jsonify({'message': 'No recommendations available'}), 200
-
-    except KeyError:
-        return jsonify({'error': 'User not found'}), 404
-    except IndexError: 
-        return jsonify({'message': 'No recommendations available'}), 200
-    
+  return jsonify({
+      'video_id': best_video_id,
+      'similarity_score': float(best_score),  
+      'metadata': video_embeddings[best_video_id]['metadata']
+  })
 
 
 @app.route("/update_interaction", methods=["POST"])
 def update_interaction():
-    try:
-        data = request.get_json()
-        user_id = data.get('user_id')
-        video_id = data.get('video_id')
-        interaction_type = data.get('interaction_type')
-        value = data.get('value')
+  data = request.get_json()
+  user_id = data.get('user_id')
+  video_id = data.get('video_id')
+  interaction_type = data.get('interaction_type')
+  value = data.get('value') 
 
-        if user_id not in user_interactions:
-            print(f"User {user_id} not found in user_interactions")
-            return jsonify({'error': 'User not found'}), 404
+  if not all([user_id, video_id, interaction_type]):
+    return jsonify({'error': 'Missing required parameters'}), 400
 
-        if video_id in user_interactions[user_id]['watch_time']:
-            user_interactions[user_id]['watch_time'][video_id] += value
-        else:
-            user_interactions[user_id]["watch_time"][video_id] = value
+  if user_id not in user_interactions:
+    user_interactions[user_id] = {
+        "likes": [],
+        "comments": {},
+        "watch_time": {}
+    }
 
-        if not all([user_id, video_id, interaction_type]):
-            print(user_id)
-            print(video_id)
-            print(interaction_type)
-            print("Missing required parameters")
-            return jsonify({'error': 'Missing required parameters'}), 400
-        print(user_interactions)
+  if interaction_type == 'like':
+    user_interactions[user_id]['likes'].append(video_id)
+  elif interaction_type == 'comment':
+    user_interactions[user_id]['comments'][video_id] = value
+  elif interaction_type == 'watch_time':
+    user_interactions[user_id]['watch_time'].setdefault(video_id, 0.0)
+    user_interactions[user_id]['watch_time'][video_id] += value
 
-        return jsonify({'message': 'Interaction updated successfully'})
-
-    except Exception as e:
-        print(f"Error in /update_interaction: {e}")
-        return jsonify({'error': f'Internal server error: {e}'}), 500
+  else:
+    return jsonify({'error': 'invalid interaction_type'}), 400
+  update_user_embedding(user_id, video_id, interaction_type, value)
+  return jsonify({'message': 'Interaction updated successfully'})
 
 
 @app.route("/random_videos", methods=['GET'])
 def get_random_videos():
-    #for video_id,video_data in video_embeddings.items():
-    selected_videos = random.sample(list(video_embeddings.keys()), min(3, len(video_embeddings)))
-    response = []
-    for video_id in selected_videos:
-        video_data = { 
-            'video_id': video_id,
-            'metadata': video_embeddings[video_id]['metadata']
-        }
-        response.append(video_data)
+  selected_videos = random.sample(list(video_embeddings.keys()),
+                                  min(3, len(video_embeddings)))
+  response = []
+  for video_id in selected_videos:
+    video_data = {
+        'video_id': video_id,
+        'metadata': video_embeddings[video_id]['metadata']
+    }
+    response.append(video_data)
 
-    return jsonify(response)
+  return jsonify(response)
 
 
 @app.route("/videos/<filename>", methods=['GET'])
 def serve_video(filename):
-    try:
+  try:
+    return send_from_directory(VIDEOS_DIR, filename)
+  except FileNotFoundError:
+    return jsonify({'error': 'Video not found'}), 404
 
-        return send_from_directory(VIDEOS_DIR, filename)
-    except FileNotFoundError:
-        return jsonify({'error': 'Video not found'}), 404
 
 
-    
+for file in os.listdir(VIDEOS_DIR):
+  if file.endswith(".mp4"):
+    video_path = os.path.join(VIDEOS_DIR, file)
+    get_video_embedding(video_path)
+
 if __name__ == '__main__':
-    app.run(debug=True)
+  app.run(debug=True, host='0.0.0.0', port=5050)

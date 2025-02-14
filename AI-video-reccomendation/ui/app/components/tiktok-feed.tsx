@@ -76,10 +76,13 @@ export default function TikTokFeed() {
 
 
       if (recommendedVideos.length > 0 && currentVideoIndex < recommendedVideos.length) {
+        console.log("scrolled")
         const videoId = recommendedVideos[currentVideoIndex].video_id;
-        const timeWatched = videoTime[videoId] || 0; // Default to 0 if undefined
-
+        const timeWatched = videoTime[videoId] || 0; 
+        console.log(videoId)
+        console.log(timeWatched)
         if (videoId && timeWatched > 0) {
+console.log("llego")
           fetch(`http://127.0.0.1:5000/update_interaction`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
