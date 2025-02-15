@@ -125,6 +125,8 @@ def update_user_embedding(user_id, video_id, interaction_type, value):
             EMBEDDING_DIM)  
     old_embedding = user_embeddings[user_id]
 
+    # the difference between user and video embeddings determines the direction in which the user emedding needs to move 
+
     if interaction_type == 'watch_time':
         update = ALPHA * value * (video_embedding - old_embedding)
 
@@ -219,12 +221,13 @@ def get_random_videos():
     response.append(video_data)
 
   return jsonify(response)
-
+ 
 
 @app.route("/videos/<filename>", methods=['GET'])
 def serve_video(filename):
+  print("videos_dir",VIDEOS_DIR,filename)
   try:
-    return send_from_directory(VIDEOS_DIR, filename)
+    return send_from_directory(VIDEOS_DIR,filename)
   except FileNotFoundError:
     return jsonify({'error': 'Video not found'}), 404
 
