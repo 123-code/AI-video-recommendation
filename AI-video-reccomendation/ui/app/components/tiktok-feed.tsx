@@ -3,16 +3,16 @@
 import { useState, useEffect } from "react";
 import { Heart, MessageCircle, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import VideoPlayer from "./video-player"; // Make sure this path is correct
+import VideoPlayer from "./video-player"; 
 
 interface Video {
   video_id: string;
   metadata: {
     file_path: string;
-    genre?: string; // Add genre and make it optional
-    title?: string; // Add title and make it optional
+    genre?: string; 
+    title?: string;
   };
-  similarity_score?: number; // Optional, as random videos won't have it.
+  similarity_score?: number; 
 }
 
 export default function TikTokFeed() {
@@ -21,7 +21,7 @@ export default function TikTokFeed() {
     const [showComments, setShowComments] = useState(false);
     const [videoTime, setVideoTime] = useState<{ [videoId: string]: number }>({});
     const [recommendedVideos, setRecommendedVideos] = useState<Video[]>([]);
-    const [isFetching, setIsFetching] = useState(false); // Track if a fetch is in progress
+    const [isFetching, setIsFetching] = useState(false); 
 
   useEffect(() => {
     fetchInitialVideos();
@@ -29,7 +29,7 @@ export default function TikTokFeed() {
 
     const fetchInitialVideos = () => {
       setIsFetching(true);
-    fetch("http://127.0.0.1:5050/random_videos")  // No user_id needed for random videos
+    fetch("http://127.0.0.1:5050/random_videos")  
       .then((res) => res.json())
         .then((data) => {
           setVideos(data);
@@ -43,12 +43,12 @@ export default function TikTokFeed() {
 
 
   const fetchNextVideo = () => {
-    if (isFetching) return; // Prevent concurrent fetches
+    if (isFetching) return; 
     setIsFetching(true);
     fetch("http://127.0.0.1:5050/next_video?user_id=user1")
       .then((res) => res.json())
       .then((data) => {
-        // Add the new video to the *recommended* videos list.
+      
         setRecommendedVideos((prevVideos) => [...prevVideos, data]);
         setIsFetching(false);
       })
@@ -64,13 +64,13 @@ export default function TikTokFeed() {
     const videoHeight = container.clientHeight;
     const newIndex = Math.round(scrollPosition / videoHeight);
 
-    // Only update if the index has actually changed
+  
     if (newIndex !== currentVideoIndex) {
        if (currentVideoIndex < displayedVideos.length) {
          const videoId = displayedVideos[currentVideoIndex].video_id;
          const timeWatched = videoTime[videoId] || 0;
 
-            if (videoId && timeWatched > 0) {  // Only send if watched for >0s
+            if (videoId && timeWatched > 0) { 
                 fetch(`http://127.0.0.1:5050/update_interaction`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -85,19 +85,19 @@ export default function TikTokFeed() {
                     if (!response.ok) {
                       return response.json().then(err => {throw new Error(err.message || 'Failed to update interaction')})
                     }
-                    return response.json(); // Parse the JSON first
+                    return response.json();
 
                 })
                 .then(data => {
                     console.log("Interaction update successful:", data);
-                    // Clear the watch time after sending, so we don't send it again.
+                
                     setVideoTime(prev => {
                         const updated = { ...prev };
                         delete updated[videoId];
                         return updated;
                     });
 
-                    // Fetch the next video *after* the update is successful.
+              
                     fetchNextVideo();
                 })
                 .catch((error) => console.error("Error updating interaction:", error));
@@ -114,7 +114,7 @@ export default function TikTokFeed() {
 
 
   const handleTimeUpdate = (videoIndex: number, currentTime: number) => {
-    // Use the combined video list here.
+
     if (videoIndex < displayedVideos.length) {
       const videoId = displayedVideos[videoIndex].video_id;
       setVideoTime((prevVideoTime) => ({
@@ -126,7 +126,7 @@ export default function TikTokFeed() {
 
 
 
-  // Combine initial random videos with recommended videos
+
   const displayedVideos = [...videos, ...recommendedVideos];
 
   return (
@@ -139,7 +139,7 @@ export default function TikTokFeed() {
             onTimeUpdate={(currentTime: number) => {
               handleTimeUpdate(index, currentTime);
             }}
-            playing={index === currentVideoIndex}  // Play only the current video
+            playing={index === currentVideoIndex}  
           />
           <div className="absolute bottom-4 left-4 right-12">
             <p className="font-bold">username</p>

@@ -1,10 +1,10 @@
-// video-player.tsx
+
 import React, { useRef, useEffect } from 'react';
 
 interface VideoPlayerProps {
   videoSrc: string;
   onTimeUpdate?: (currentTime: number) => void;
-  playing: boolean; // Added prop
+  playing: boolean; 
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playing }) => {
@@ -23,7 +23,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playi
 
     video.addEventListener("timeupdate", handleTimeUpdate);
 
-    // Play/Pause based on 'playing' prop
+ 
     if (playing) {
       video.play().catch(error => {
         console.error("Autoplay failed:", error);
@@ -43,7 +43,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playi
         ref={videoRef}
         src={videoSrc}
         controls={true}
-        autoPlay={playing} // Conditionally autoplay
+        autoPlay={playing}
         loop
         muted
         playsInline

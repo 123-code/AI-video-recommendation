@@ -26,6 +26,7 @@ video_embeddings = {}
 user_embeddings = {} 
 
 user_interactions = {}
+watched = []
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,7 +60,7 @@ def extract_frame_embeddings(video_path, model, transform, device):
         ret, frame = cap.read()
         if not ret:
             break
-
+ 
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame = Image.fromarray(frame)
@@ -128,6 +129,7 @@ def update_user_embedding(user_id, video_id, interaction_type, value):
     # the difference between user and video embeddings determines the direction in which the user emedding needs to move 
 
     if interaction_type == 'watch_time':
+        print(value)
         update = ALPHA * value * (video_embedding - old_embedding)
 
     elif interaction_type == 'like':
@@ -166,8 +168,27 @@ def next_video():
   sorted_indices = np.argsort(similarities)[::-1]
   if not len(sorted_indices):
     return jsonify({'message': 'No recommendations available'}), 200
+  
   best_video_id = video_ids[sorted_indices[0]]
   best_score = similarities[sorted_indices[0]]
+  for x in range(len(sorted_indices)):
+     video_index = sorted_indices[x]
+     video_id = video_ids[video_index]
+
+     if video_id in watched:
+        if x + 1 < len(sorted_indices):
+          next_video_index = sorted_indices[x+1] 
+          best_video_id = video_ids[next_video_index]
+          best_score = similarities[next_video_index]
+        else:
+           return jsonify({'message': 'No recommendations available'}), 200
+        
+     else:
+        best_video_id = video_id
+        best_score = similarities[video_index]
+        break
+  
+  watched.append(best_video_id)
 
   return jsonify({
       'video_id': best_video_id,
