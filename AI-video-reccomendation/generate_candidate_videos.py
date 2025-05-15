@@ -69,3 +69,68 @@ for x in range(len(prompts)):
 # Save video directly with imageio
     output_path = f"output_video{x}.mp4"
     imageio.mimsave(output_path, formatted_frames, fps=10)
+
+
+
+"""
+from diffusers import LattePipeline
+from diffusers.models import AutoencoderKLTemporalDecoder
+from torchvision.utils import save_image
+import torch
+import imageio
+import numpy as np
+
+torch.manual_seed(0)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+video_length = 16  # 1 (text-to-image) or 16 (text-to-video)
+pipe = LattePipeline.from_pretrained("maxin-cn/Latte-1", torch_dtype=torch.float16).to(device)
+
+# Using temporal decoder of VAE
+vae = AutoencoderKLTemporalDecoder.from_pretrained(
+    "maxin-cn/Latte-1", 
+    subfolder="vae_temporal_decoder", 
+    torch_dtype=torch.float16
+).to(device)
+pipe.vae = vae
+
+prompt = "a cat wearing sunglasses and working as a lifeguard at pool."
+
+# Generate the video frames
+videos = pipe(prompt, video_length=video_length, output_type='pt').frames.cpu()
+
+# Convert the frames to a format that can be saved by imageio
+frames = []
+for i in range(videos.shape[1]):
+    # Extract each frame, convert to numpy array in the correct format
+    frame = videos[0, i].permute(1, 2, 0).numpy()
+    # Convert from float to uint8 (0-255 range)
+    frame = (frame * 255).astype(np.uint8)
+    frames.append(frame)
+
+# Save the frames as a video file
+output_path = "video.mp4"
+try:
+    # Try using imageio.mimsave with explicitly specified format
+    imageio.mimsave(output_path, frames, fps=8, format='FFMPEG')
+    print(f"Video saved to {output_path}")
+except Exception as e:
+    print(f"First attempt failed: {e}")
+    try:
+        # Alternative approach using imageio.get_writer
+        writer = imageio.get_writer(output_path, fps=8, codec='libx264')
+        for frame in frames:
+            writer.append_data(frame)
+        writer.close()
+        print(f"Video saved to {output_path}")
+    except Exception as e:
+        print(f"Second attempt failed: {e}")
+        # Fallback to saving a GIF if MP4 fails
+        gif_path = "video.gif"
+        imageio.mimsave(gif_path, frames, fps=8)
+        print(f"Saved as GIF instead at {gif_path}")
+
+# Optionally, you can also save individual frames as images
+for i, frame in enumerate(frames):
+    save_path = f"frame_{i:03d}.png"
+    imageio.imwrite(save_path, frame)
+"""
