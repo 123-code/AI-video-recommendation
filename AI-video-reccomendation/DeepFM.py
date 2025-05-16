@@ -5,7 +5,7 @@ from UserInteractions import user_interactions,user_embeddings
 from VideoMetadata import video_embeddings 
 import pickle 
 import os 
-
+#neural network, supposed to predict score of engagement from 0-1 , with user_embedding,video embedding and interaction featurees
 class DeepFM(nn.Module):
     def __init__(self,embedding_dim=512,hidden_dims=[128,64],dropout=0.3):
         super(DeepFM,self).__init__()
