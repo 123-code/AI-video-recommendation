@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Heart, MessageCircle, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import VideoPlayer from "./video-player"; 
@@ -16,31 +16,39 @@ interface Video {
 }
 
 export default function TikTokFeed() {
-    const [videos, setVideos] = useState<Video[]>([]);
-    const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-    const [showComments, setShowComments] = useState(false);
-    const [videoTime, setVideoTime] = useState<{ [videoId: string]: number }>({});
-    const [recommendedVideos, setRecommendedVideos] = useState<Video[]>([]);
-    const [isFetching, setIsFetching] = useState(false); 
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [showComments, setShowComments] = useState(false);
+  const [videoTime, setVideoTime] = useState<{ [videoId: string]: number }>({});
+  const [recommendedVideos, setRecommendedVideos] = useState<Video[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+
+  const displayedVideos = useMemo(() => [...videos, ...recommendedVideos], [videos, recommendedVideos]);
 
   useEffect(() => {
     fetchInitialVideos();
   }, []);
 
-    const fetchInitialVideos = () => {
-      setIsFetching(true);
+  useEffect(() => {
+    const totalVideos = videos.length + recommendedVideos.length;
+    if (totalVideos > 0 && currentVideoIndex >= totalVideos - 2 && !isFetching) {
+      fetchNextVideo();
+    }
+  }, [currentVideoIndex, videos.length, recommendedVideos.length, isFetching]);
+
+  const fetchInitialVideos = () => {
+    setIsFetching(true);
     fetch("http://127.0.0.1:5050/random_videos")  
       .then((res) => res.json())
-        .then((data) => {
-          setVideos(data);
-            setIsFetching(false);
-        })
-        .catch((error) => {
-            console.error("Error fetching initial videos:", error);
-            setIsFetching(false);
-        });
+      .then((data) => {
+        setVideos(data);
+        setIsFetching(false);
+      })
+      .catch((error) => {
+        console.error("Error fetching initial videos:", error);
+        setIsFetching(false);
+      });
   };
-
 
   const fetchNextVideo = () => {
     if (isFetching) return; 
@@ -48,7 +56,6 @@ export default function TikTokFeed() {
     fetch("http://127.0.0.1:5050/next_video?user_id=user1")
       .then((res) => res.json())
       .then((data) => {
-      
         setRecommendedVideos((prevVideos) => [...prevVideos, data]);
         setIsFetching(false);
       })
@@ -64,58 +71,44 @@ export default function TikTokFeed() {
     const videoHeight = container.clientHeight;
     const newIndex = Math.round(scrollPosition / videoHeight);
 
-  
-    if (newIndex !== currentVideoIndex) {
-       if (currentVideoIndex < displayedVideos.length) {
-         const videoId = displayedVideos[currentVideoIndex].video_id;
-         const timeWatched = videoTime[videoId] || 0;
+    if (newIndex !== currentVideoIndex && newIndex >= 0 && newIndex < displayedVideos.length) {
+      const prevVideoId = displayedVideos[currentVideoIndex]?.video_id;
+      const timeWatched = prevVideoId ? videoTime[prevVideoId] || 0 : 0;
 
-            if (videoId && timeWatched > 0) { 
-                fetch(`http://127.0.0.1:5050/update_interaction`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        user_id: "user1",
-                        video_id: videoId,
-                        interaction_type: "watch_time",
-                        value: timeWatched
-                    })
-                })
-                .then(response => {
-                    if (!response.ok) {
-                      return response.json().then(err => {throw new Error(err.message || 'Failed to update interaction')})
-                    }
-                    return response.json();
-
-                })
-                .then(data => {
-                    console.log("Interaction update successful:", data);
-                
-                    setVideoTime(prev => {
-                        const updated = { ...prev };
-                        delete updated[videoId];
-                        return updated;
-                    });
-
-              
-                    fetchNextVideo();
-                })
-                .catch((error) => console.error("Error updating interaction:", error));
-            }
-            else {
-              if (newIndex >= videos.length + recommendedVideos.length -1){
-                fetchNextVideo();
-              }
-            }
-        }
+      if (prevVideoId && timeWatched > 0) { 
+        fetch(`http://127.0.0.1:5050/update_interaction`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: "user1",
+            video_id: prevVideoId,
+            interaction_type: "watch_time",
+            value: timeWatched
+          })
+        })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(err => {throw new Error(err.message || 'Failed to update interaction')})
+          }
+          return response.json();
+        })
+        .then(data => {
+          console.log("Interaction update successful:", data);
+          setVideoTime(prev => {
+            const updated = { ...prev };
+            delete updated[prevVideoId];
+            return updated;
+          });
+        })
+        .catch((error) => console.error("Error updating interaction:", error));
+      }
+      
       setCurrentVideoIndex(newIndex);
     }
   };
 
-
   const handleTimeUpdate = (videoIndex: number, currentTime: number) => {
-
-    if (videoIndex < displayedVideos.length) {
+    if (videoIndex >= 0 && videoIndex < displayedVideos.length) {
       const videoId = displayedVideos[videoIndex].video_id;
       setVideoTime((prevVideoTime) => ({
         ...prevVideoTime,
@@ -123,11 +116,6 @@ export default function TikTokFeed() {
       }));
     }
   };
-
-
-
-
-  const displayedVideos = [...videos, ...recommendedVideos];
 
   return (
     <div className="h-[100vh] overflow-y-scroll snap-y snap-mandatory" onScroll={handleScroll}>

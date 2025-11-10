@@ -1,10 +1,10 @@
-
 import React, { useRef, useEffect } from 'react';
 
 interface VideoPlayerProps {
   videoSrc: string;
   onTimeUpdate?: (currentTime: number) => void;
-  playing: boolean; 
+  playing: boolean;
+  videoId?: string;
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playing }) => {
@@ -12,7 +12,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playi
 
   useEffect(() => {
     const video = videoRef.current;
-
     if (!video) return;
 
     const handleTimeUpdate = () => {
@@ -23,11 +22,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playi
 
     video.addEventListener("timeupdate", handleTimeUpdate);
 
- 
     if (playing) {
-      video.play().catch(error => {
-        console.error("Autoplay failed:", error);
-      });
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {});
+      }
     } else {
       video.pause();
     }
@@ -38,15 +37,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoSrc, onTimeUpdate, playi
   }, [videoSrc, onTimeUpdate, playing]);
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <video
         ref={videoRef}
         src={videoSrc}
-        controls={true}
-        autoPlay={playing}
+        controls={false}
         loop
         muted
         playsInline
+        preload="auto"
         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
       />
     </div>

@@ -1,3 +1,7 @@
+import os
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+
 import logging
 import random
 import numpy as np
@@ -8,7 +12,6 @@ import torchvision.transforms as transforms
 from PIL import Image
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import os
 import json
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -94,39 +97,65 @@ def get_video_embedding(video_path):
         video_filename)[0]  
 
     if video_id not in video_embeddings:
+        video_embeddings[video_id] = {
+            'embedding': None,
+            'metadata': {'title': f'Video {video_id}', 'genre': 'Unknown', 'file_path': f'videos/{video_filename}'}
+        }
+    
+    if video_embeddings[video_id]['embedding'] is None:
         try:
             frame_embeddings = extract_frame_embeddings(
                 video_path, model, transform, device)
             if len(frame_embeddings) == 0:
-
                 video_embedding = np.zeros(EMBEDDING_DIM)
             else:
                 video_embedding = average_pool_video_embedding(
                     frame_embeddings)
 
-            video_embeddings[video_id] = {
-                'embedding': video_embedding,
-                'metadata': {'title': f'Video {video_id}', 'genre': 'Unknown', 'file_path': f'videos/{video_filename}'}
-            }
+            video_embeddings[video_id]['embedding'] = video_embedding
         except Exception as e:
             logging.error(
                 f"Error generating embedding for video {video_id}: {e}")
-            return None  
+            video_embeddings[video_id]['embedding'] = np.zeros(EMBEDDING_DIM)
 
     return video_embeddings[video_id]['embedding']
+
+
+def initialize_video_metadata():
+    """Initialize video metadata from video files in the videos directory."""
+    if not os.path.exists(VIDEOS_DIR):
+        logging.warning(f"Videos directory not found: {VIDEOS_DIR}")
+        return
+    
+    for file in os.listdir(VIDEOS_DIR):
+        if file.endswith(".mp4") or file.endswith(".mov"):
+            video_filename = file
+            video_id = os.path.splitext(video_filename)[0]
+            if video_id not in video_embeddings:
+                video_embeddings[video_id] = {
+                    'embedding': None,
+                    'metadata': {
+                        'title': f'Video {video_id}',
+                        'genre': 'Unknown',
+                        'file_path': f'videos/{video_filename}'
+                    }
+                }
+    print(f"Initialized metadata for {len(video_embeddings)} videos")
 
 
 def update_user_embedding(user_id, video_id, interaction_type, value):
     if video_id not in video_embeddings:
       return jsonify({'error': 'video_id does not exist'}), 404
 
-    video_embedding = video_embeddings[video_id]['embedding']
+    file_path = video_embeddings[video_id]['metadata']['file_path']
+    filename = file_path.replace('videos/', '') if file_path.startswith('videos/') else file_path
+    video_path = os.path.join(VIDEOS_DIR, filename)
+    video_embedding = get_video_embedding(video_path)
+    
     if user_id not in user_embeddings:
         user_embeddings[user_id] = np.zeros(
             EMBEDDING_DIM)  
     old_embedding = user_embeddings[user_id]
-
-    # the difference between user and video embeddings determines the direction in which the user emedding needs to move 
 
     if interaction_type == 'watch_time':
         print(value)
@@ -150,35 +179,46 @@ def next_video():
     return jsonify({'error': 'user_id is required'}), 400
 
   if user_id not in user_embeddings:
-
     user_embeddings[user_id] = DEFAULT_EMBEDDING.copy()
 
   user_embedding = user_embeddings[user_id]
 
-
   video_ids = list(video_embeddings.keys())
+  if not video_ids:
+    return jsonify({'message': 'No videos available'}), 200
 
-  video_embeds = [video_embeddings[v_id]['embedding'].tolist()
-                  for v_id in video_ids]
-  user_embedding = user_embedding.reshape(
-      1, -1) 
+  video_embeds = []
+  processed_video_ids = []
+  for v_id in video_ids:
+    file_path = video_embeddings[v_id]['metadata']['file_path']
+    filename = file_path.replace('videos/', '') if file_path.startswith('videos/') else file_path
+    video_path = os.path.join(VIDEOS_DIR, filename)
+    if os.path.exists(video_path):
+      emb = get_video_embedding(video_path)
+      if emb is not None:
+        video_embeds.append(emb.tolist())
+        processed_video_ids.append(v_id)
+  
+  if not video_embeds:
+    return jsonify({'message': 'No processed videos available'}), 200
+
+  user_embedding = user_embedding.reshape(1, -1) 
   similarities = cosine_similarity(user_embedding, video_embeds)[0]
 
- 
   sorted_indices = np.argsort(similarities)[::-1]
   if not len(sorted_indices):
     return jsonify({'message': 'No recommendations available'}), 200
   
-  best_video_id = video_ids[sorted_indices[0]]
+  best_video_id = processed_video_ids[sorted_indices[0]]
   best_score = similarities[sorted_indices[0]]
   for x in range(len(sorted_indices)):
      video_index = sorted_indices[x]
-     video_id = video_ids[video_index]
+     video_id = processed_video_ids[video_index]
 
      if video_id in watched:
         if x + 1 < len(sorted_indices):
           next_video_index = sorted_indices[x+1] 
-          best_video_id = video_ids[next_video_index]
+          best_video_id = processed_video_ids[next_video_index]
           best_score = similarities[next_video_index]
         else:
            return jsonify({'message': 'No recommendations available'}), 200
@@ -231,6 +271,9 @@ def update_interaction():
 
 @app.route("/random_videos", methods=['GET'])
 def get_random_videos():
+  if len(video_embeddings) == 0:
+    return jsonify([])
+  
   selected_videos = random.sample(list(video_embeddings.keys()),
                                   min(3, len(video_embeddings)))
   response = []
@@ -254,10 +297,8 @@ def serve_video(filename):
 
 
 
-for file in os.listdir(VIDEOS_DIR):
-  if file.endswith(".mp4"):
-    video_path = os.path.join(VIDEOS_DIR, file)
-    get_video_embedding(video_path)
-
 if __name__ == '__main__':
+  print("Starting server...")
+  initialize_video_metadata()
+  print("Server ready. Videos will be processed on-demand when needed.")
   app.run(debug=True, host='0.0.0.0', port=5050)
