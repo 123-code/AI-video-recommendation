@@ -4,6 +4,10 @@ os.environ['MKL_NUM_THREADS'] = '1'
 
 import logging
 import random
+import math
+import uuid
+import time
+import hashlib
 import numpy as np
 import cv2
 import torch
@@ -12,293 +16,948 @@ import torchvision.transforms as transforms
 from PIL import Image
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import json
 from sklearn.metrics.pairwise import cosine_similarity
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
 
-
 VIDEOS_DIR = os.path.join(os.getcwd(), "videos")
-EMBEDDING_DIM = 512  
-DEFAULT_EMBEDDING = np.zeros(EMBEDDING_DIM)
-ALPHA = 0.1 
-
-
-video_embeddings = {} 
-user_embeddings = {} 
-
-user_interactions = {}
-watched = []
-
+EMBEDDING_DIM = 512
+ALPHA = 0.1
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-resnet = models.resnet18(
-    weights=models.ResNet18_Weights.DEFAULT) 
+resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+backbone = torch.nn.Sequential(*list(resnet.children())[:-1])
+backbone = backbone.to(device)
+backbone.eval()
 
-model = torch.nn.Sequential(*list(resnet.children())[:-1])
-model = model.to(device)
-model.eval() 
-
-
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),  
+img_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
-
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
+# ---------------------------------------------------------------------------
+# Data stores (in-memory)
+# ---------------------------------------------------------------------------
 
+auth_tokens = {}  # token -> user_id
 
-def extract_frame_embeddings(video_path, model, transform, device):
-    """Extracts embeddings from each frame of a video using a pretrained model."""
+users_db = {}  # user_id -> User dict
+
+videos_db = {}  # video_id -> Video dict
+
+comments_db = defaultdict(list)  # video_id -> [Comment]
+
+interaction_log = []  # [{user_id, video_id, type, value, timestamp}]
+
+user_item_matrix = defaultdict(lambda: defaultdict(float))  # user_id -> {video_id -> score}
+
+CATEGORIES = [
+    "Nature", "Urban", "Abstract", "Architecture", "Cinematic",
+    "Landscape", "Animals", "Weather", "Ocean", "Space",
+    "Technology", "Art", "Music", "Dance", "Comedy"
+]
+
+MUSIC_TRACKS = [
+    {"name": "Original Sound", "artist": "creator"},
+    {"name": "Blinding Lights", "artist": "The Weeknd"},
+    {"name": "Levitating", "artist": "Dua Lipa"},
+    {"name": "Stay", "artist": "Kid LAROI & Justin Bieber"},
+    {"name": "Heat Waves", "artist": "Glass Animals"},
+    {"name": "Peaches", "artist": "Justin Bieber"},
+    {"name": "Montero", "artist": "Lil Nas X"},
+    {"name": "Good 4 U", "artist": "Olivia Rodrigo"},
+    {"name": "Kiss Me More", "artist": "Doja Cat"},
+    {"name": "Butter", "artist": "BTS"},
+    {"name": "Astronaut In The Ocean", "artist": "Masked Wolf"},
+    {"name": "Save Your Tears", "artist": "The Weeknd"},
+]
+
+FAKE_USERNAMES = [
+    "alex_creates", "maya.films", "urban.lens", "nature_vibes",
+    "cinematic.soul", "pixel.artist", "wave.rider", "sky.chaser",
+    "neon.nights", "wild.frames", "dream.catcher", "echo.visual",
+    "storm.clips", "golden.hour", "deep.focus", "flow.state",
+    "vibe.check", "mood.board", "raw.footage", "frame.by.frame"
+]
+
+COMMENT_TEMPLATES = [
+    "this is incredible! 🔥", "wow the cinematography 😍", "obsessed with this",
+    "how do you make these??", "literally perfect", "the vibes are immaculate ✨",
+    "this should have more views", "adding this to my favorites",
+    "the colors in this 🎨", "i could watch this on loop forever",
+    "this is art", "goosebumps", "underrated content fr",
+    "the lighting tho 👀", "main character energy", "aesthetic overload",
+    "this hits different at 3am", "saving this for later", "chef's kiss 🤌",
+    "nah this is too good", "POV: you found the best creator",
+    "tutorial when??", "the transition 😩🔥", "living for this content",
+    "why isn't this viral yet", "absolutely stunning", "crying this is so beautiful",
+    "this is exactly what my fyp needed", "legend", "pure talent 🙌",
+]
+
+DESCRIPTIONS = [
+    "wait for it... #fyp #viral", "POV: you discovered something beautiful #aesthetic",
+    "this took 3 hours to film 😅 #filmmaker", "nature never disappoints 🌿 #nature",
+    "caught in 4k 📸 #cinematic", "the golden hour hits different #goldenhour",
+    "no filter needed #raw #real", "when the light is perfect ✨",
+    "exploring hidden gems #explore #travel", "this view tho 😍 #views",
+    "moody vibes only #mood #aesthetic", "urban jungle 🏙️ #city #urban",
+    "art in motion #art #creative", "just vibes #chill #relax",
+    "another day another masterpiece #content", "the beauty in details #macro",
+    "chasing light 🌅 #photography", "found this spot by accident #hidden",
+    "can't stop watching this #loop #satisfying", "reality is beautiful #nofilter",
+]
+
+# ---------------------------------------------------------------------------
+# Embedding extraction (ResNet-18)
+# ---------------------------------------------------------------------------
+
+def extract_frame_embeddings(video_path):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise FileNotFoundError(f"Could not open video: {video_path}")
-
+        return np.zeros((1, EMBEDDING_DIM))
     frame_embeddings = []
-
-    while True:
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    sample_indices = np.linspace(0, max(frame_count - 1, 0), min(8, frame_count), dtype=int)
+    for idx in sample_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
         if not ret:
-            break
- 
-
+            continue
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame = Image.fromarray(frame)
-
-
-        frame = transform(frame).unsqueeze(0).to(device)
-
+        tensor = img_transform(frame).unsqueeze(0).to(device)
         with torch.no_grad():
-            embedding = model(
-                frame).squeeze().cpu().numpy()  
-
-
-            if embedding.ndim == 4:
-                embedding = embedding.reshape(-1)
-
-            frame_embeddings.append(embedding)
-
+            emb = backbone(tensor).squeeze().cpu().numpy()
+            if emb.ndim > 1:
+                emb = emb.reshape(-1)
+            frame_embeddings.append(emb)
     cap.release()
+    if not frame_embeddings:
+        return np.zeros((1, EMBEDDING_DIM))
     return np.array(frame_embeddings)
 
 
-def average_pool_video_embedding(frame_embeddings):
-    """Averages the frame embeddings to create a single video embedding."""
-    return np.mean(frame_embeddings, axis=0)
+def get_video_embedding(video_id):
+    v = videos_db.get(video_id)
+    if not v:
+        return np.zeros(EMBEDDING_DIM)
+    if v['embedding'] is None:
+        video_path = os.path.join(VIDEOS_DIR, v['filename'])
+        if os.path.exists(video_path):
+            frames = extract_frame_embeddings(video_path)
+            v['embedding'] = np.mean(frames, axis=0)
+        else:
+            v['embedding'] = np.zeros(EMBEDDING_DIM)
+    return v['embedding']
 
 
-def get_video_embedding(video_path):
-    """Gets the pre-computed video embedding, or computes it if it doesn't exist."""
-    video_filename = os.path.basename(video_path)
-    video_id = os.path.splitext(
-        video_filename)[0]  
+def get_video_duration(video_path):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 10.0
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    cap.release()
+    return max(frames / fps, 1.0)
 
-    if video_id not in video_embeddings:
-        video_embeddings[video_id] = {
-            'embedding': None,
-            'metadata': {'title': f'Video {video_id}', 'genre': 'Unknown', 'file_path': f'videos/{video_filename}'}
+
+# ---------------------------------------------------------------------------
+# Monolith Recommendation Engine
+# ---------------------------------------------------------------------------
+
+class CollisionlessEmbeddingTable:
+    """Hash-map based embedding storage with no collisions (unlike feature-hashing approaches)."""
+    def __init__(self, dim):
+        self.dim = dim
+        self.table = {}
+
+    def get(self, key):
+        if key not in self.table:
+            self.table[key] = np.random.randn(self.dim) * 0.01
+        return self.table[key]
+
+    def set(self, key, value):
+        self.table[key] = value
+
+    def update(self, key, gradient, lr=0.01):
+        current = self.get(key)
+        self.table[key] = current + lr * gradient
+
+
+class MonolithRecommender:
+    """
+    Inspired by ByteDance's Monolith system.
+    Single unified model for candidate generation + ranking with real-time updates.
+    Features: collisionless embedding tables, multi-signal scoring, diversity re-ranking.
+    """
+    def __init__(self):
+        self.user_embeddings = CollisionlessEmbeddingTable(EMBEDDING_DIM)
+        self.user_interest_embeddings = CollisionlessEmbeddingTable(64)
+        self.scoring_weights = {
+            'content_similarity': 0.25,
+            'collaborative': 0.20,
+            'engagement_quality': 0.15,
+            'freshness': 0.08,
+            'creator_affinity': 0.10,
+            'category_interest': 0.12,
+            'completion_prediction': 0.05,
+            'exploration_bonus': 0.05,
         }
-    
-    if video_embeddings[video_id]['embedding'] is None:
-        try:
-            frame_embeddings = extract_frame_embeddings(
-                video_path, model, transform, device)
-            if len(frame_embeddings) == 0:
-                video_embedding = np.zeros(EMBEDDING_DIM)
+
+    def get_recommendations(self, user_id, n=5, feed_type='foryou'):
+        user = users_db.get(user_id)
+        if not user:
+            return self._cold_start_recommendations(n)
+
+        watched = set(user.get('watched_videos', []))
+
+        if feed_type == 'following':
+            return self._following_feed(user_id, watched, n)
+
+        candidates = self._generate_candidates(user_id, watched, n * 5)
+        scored = self._score_candidates(user_id, candidates)
+        diverse = self._diversity_rerank(scored, n)
+        final = self._inject_exploration(user_id, diverse, watched, n)
+        return final
+
+    def _cold_start_recommendations(self, n):
+        all_videos = list(videos_db.keys())
+        trending = sorted(all_videos, key=lambda vid: videos_db[vid]['stats']['engagement_score'], reverse=True)
+        selected = trending[:n * 2]
+        random.shuffle(selected)
+        return [self._build_video_response(vid) for vid in selected[:n]]
+
+    def _following_feed(self, user_id, watched, n):
+        user = users_db[user_id]
+        following = set(user.get('following', []))
+        if not following:
+            return self._cold_start_recommendations(n)
+        candidates = []
+        for vid, v in videos_db.items():
+            if vid in watched:
+                continue
+            if v['creator_id'] in following:
+                candidates.append(vid)
+        candidates.sort(key=lambda vid: videos_db[vid]['created_at'], reverse=True)
+        return [self._build_video_response(vid) for vid in candidates[:n]]
+
+    def _generate_candidates(self, user_id, watched, n):
+        content_based = self._content_based_candidates(user_id, watched, n // 3)
+        collaborative = self._collaborative_candidates(user_id, watched, n // 3)
+        trending = self._trending_candidates(watched, n // 3)
+        all_candidates = {}
+        for vid, scores in content_based:
+            all_candidates[vid] = scores
+        for vid, scores in collaborative:
+            if vid in all_candidates:
+                all_candidates[vid].update(scores)
             else:
-                video_embedding = average_pool_video_embedding(
-                    frame_embeddings)
+                all_candidates[vid] = scores
+        for vid, scores in trending:
+            if vid in all_candidates:
+                all_candidates[vid].update(scores)
+            else:
+                all_candidates[vid] = scores
+        return all_candidates
 
-            video_embeddings[video_id]['embedding'] = video_embedding
-        except Exception as e:
-            logging.error(
-                f"Error generating embedding for video {video_id}: {e}")
-            video_embeddings[video_id]['embedding'] = np.zeros(EMBEDDING_DIM)
+    def _content_based_candidates(self, user_id, watched, n):
+        user_emb = self.user_embeddings.get(user_id).reshape(1, -1)
+        candidates = []
+        for vid, v in videos_db.items():
+            if vid in watched:
+                continue
+            emb = get_video_embedding(vid)
+            if emb is None:
+                continue
+            sim = cosine_similarity(user_emb, emb.reshape(1, -1))[0][0]
+            candidates.append((vid, {'content_similarity': float(sim)}))
+        candidates.sort(key=lambda x: x[1]['content_similarity'], reverse=True)
+        return candidates[:n]
 
-    return video_embeddings[video_id]['embedding']
+    def _collaborative_candidates(self, user_id, watched, n):
+        user_likes = set()
+        for vid, v in videos_db.items():
+            if user_id in v.get('liked_by', set()):
+                user_likes.add(vid)
+        if not user_likes:
+            return []
+        similar_users = []
+        for uid in users_db:
+            if uid == user_id:
+                continue
+            their_likes = set()
+            for vid, v in videos_db.items():
+                if uid in v.get('liked_by', set()):
+                    their_likes.add(vid)
+            if not their_likes:
+                continue
+            overlap = len(user_likes & their_likes)
+            union = len(user_likes | their_likes)
+            if union > 0:
+                jaccard = overlap / union
+                if jaccard > 0.05:
+                    similar_users.append((uid, jaccard))
+        similar_users.sort(key=lambda x: x[1], reverse=True)
+        similar_users = similar_users[:10]
+        candidate_scores = defaultdict(float)
+        for uid, sim in similar_users:
+            for vid, v in videos_db.items():
+                if vid in watched or vid in user_likes:
+                    continue
+                if uid in v.get('liked_by', set()):
+                    candidate_scores[vid] += sim
+        candidates = [(vid, {'collaborative': score})
+                      for vid, score in candidate_scores.items()]
+        candidates.sort(key=lambda x: x[1]['collaborative'], reverse=True)
+        return candidates[:n]
+
+    def _trending_candidates(self, watched, n):
+        now = time.time()
+        candidates = []
+        for vid, v in videos_db.items():
+            if vid in watched:
+                continue
+            age_hours = (now - v['created_at']) / 3600
+            decay = math.exp(-0.01 * age_hours)
+            trending_score = v['stats']['engagement_score'] * decay
+            candidates.append((vid, {'trending': trending_score}))
+        candidates.sort(key=lambda x: x[1]['trending'], reverse=True)
+        return candidates[:n]
+
+    def _score_candidates(self, user_id, candidates):
+        user = users_db.get(user_id, {})
+        user_interests = user.get('category_interests', {})
+        user_following = set(user.get('following', []))
+        scored = []
+        for vid, signals in candidates.items():
+            v = videos_db[vid]
+            content_sim = signals.get('content_similarity', 0)
+            collab = signals.get('collaborative', 0)
+            trending = signals.get('trending', 0)
+
+            age_hours = (time.time() - v['created_at']) / 3600
+            freshness = math.exp(-0.005 * age_hours)
+
+            creator_affinity = 0.5 if v['creator_id'] in user_following else 0
+            for liked_creator in self._get_liked_creators(user_id):
+                if v['creator_id'] == liked_creator:
+                    creator_affinity = max(creator_affinity, 0.8)
+
+            cat = v.get('category', 'Unknown')
+            cat_interest = user_interests.get(cat, 0)
+            max_interest = max(user_interests.values()) if user_interests else 1
+            cat_interest = cat_interest / max(max_interest, 1)
+
+            stats = v['stats']
+            completion = stats.get('avg_completion_rate', 0.5)
+
+            score = (
+                self.scoring_weights['content_similarity'] * max(content_sim, 0) +
+                self.scoring_weights['collaborative'] * min(collab, 1) +
+                self.scoring_weights['engagement_quality'] * min(trending, 1) +
+                self.scoring_weights['freshness'] * freshness +
+                self.scoring_weights['creator_affinity'] * creator_affinity +
+                self.scoring_weights['category_interest'] * cat_interest +
+                self.scoring_weights['completion_prediction'] * completion +
+                self.scoring_weights['exploration_bonus'] * random.uniform(0, 0.3)
+            )
+            scored.append({
+                'video_id': vid,
+                'score': score,
+                'signals': signals,
+                'category': cat
+            })
+        scored.sort(key=lambda x: x['score'], reverse=True)
+        return scored
+
+    def _diversity_rerank(self, scored, n):
+        """Maximal Marginal Relevance for diversity."""
+        if len(scored) <= n:
+            return [s['video_id'] for s in scored]
+        selected = [scored[0]]
+        remaining = scored[1:]
+        while len(selected) < n and remaining:
+            best_idx = 0
+            best_mmr = -float('inf')
+            for i, candidate in enumerate(remaining):
+                relevance = candidate['score']
+                max_sim = 0
+                for s in selected:
+                    if candidate['category'] == s['category']:
+                        max_sim = max(max_sim, 0.5)
+                    if videos_db[candidate['video_id']]['creator_id'] == videos_db[s['video_id']]['creator_id']:
+                        max_sim = max(max_sim, 0.7)
+                lam = 0.6
+                mmr = lam * relevance - (1 - lam) * max_sim
+                if mmr > best_mmr:
+                    best_mmr = mmr
+                    best_idx = i
+            selected.append(remaining.pop(best_idx))
+        return [s['video_id'] for s in selected]
+
+    def _inject_exploration(self, user_id, ranked_ids, watched, n):
+        exploration_rate = 0.15
+        num_explore = max(1, int(n * exploration_rate))
+        all_unwatched = [vid for vid in videos_db if vid not in watched and vid not in ranked_ids]
+        if all_unwatched:
+            explore_vids = random.sample(all_unwatched, min(num_explore, len(all_unwatched)))
+            insert_positions = sorted(random.sample(range(1, min(n, len(ranked_ids) + 1)),
+                                                     min(num_explore, len(ranked_ids))))
+            for pos, vid in zip(insert_positions, explore_vids):
+                ranked_ids.insert(pos, vid)
+        return [self._build_video_response(vid) for vid in ranked_ids[:n]]
+
+    def _build_video_response(self, vid):
+        v = videos_db.get(vid)
+        if not v:
+            return None
+        return {
+            'video_id': vid,
+            'filename': v['filename'],
+            'url': f"/videos/{v['filename']}",
+            'creator': {
+                'user_id': v['creator_id'],
+                'username': users_db.get(v['creator_id'], {}).get('username', 'unknown'),
+                'display_name': users_db.get(v['creator_id'], {}).get('display_name', 'Unknown'),
+                'avatar': users_db.get(v['creator_id'], {}).get('avatar', ''),
+                'is_verified': users_db.get(v['creator_id'], {}).get('is_verified', False),
+            },
+            'description': v.get('description', ''),
+            'music': v.get('music', {'name': 'Original Sound', 'artist': 'creator'}),
+            'category': v.get('category', 'Unknown'),
+            'tags': v.get('tags', []),
+            'stats': {
+                'views': v['stats']['views'],
+                'likes': v['stats']['likes'],
+                'comments': v['stats']['comment_count'],
+                'shares': v['stats']['shares'],
+            },
+            'duration': v.get('duration', 10),
+            'created_at': v['created_at'],
+        }
+
+    def _get_liked_creators(self, user_id):
+        creators = set()
+        for vid, v in videos_db.items():
+            if user_id in v.get('liked_by', set()):
+                creators.add(v['creator_id'])
+        return creators
+
+    def update_user_embedding(self, user_id, video_id, interaction_type, value=1.0):
+        video_emb = get_video_embedding(video_id)
+        user_emb = self.user_embeddings.get(user_id)
+        weights = {'like': 0.3, 'comment': 0.25, 'share': 0.35, 'watch_time': 0.1, 'view': 0.02}
+        w = weights.get(interaction_type, 0.05) * value
+        gradient = w * (video_emb - user_emb)
+        self.user_embeddings.update(user_id, gradient, lr=ALPHA)
+        v = videos_db.get(video_id)
+        if v:
+            cat = v.get('category', 'Unknown')
+            user = users_db.get(user_id)
+            if user:
+                interests = user.setdefault('category_interests', {})
+                boost = {'like': 2.0, 'comment': 1.5, 'share': 2.5, 'watch_time': value * 0.5, 'view': 0.2}
+                interests[cat] = interests.get(cat, 0) + boost.get(interaction_type, 0.1)
+        user_item_matrix[user_id][video_id] += w
 
 
-def initialize_video_metadata():
-    """Initialize video metadata from video files in the videos directory."""
+recommender = MonolithRecommender()
+
+# ---------------------------------------------------------------------------
+# Seed data
+# ---------------------------------------------------------------------------
+
+def generate_avatar_url(username):
+    h = hashlib.md5(username.encode()).hexdigest()
+    return f"https://api.dicebear.com/7.x/avataaars/svg?seed={h}"
+
+
+def seed_data():
+    random.seed(42)
+    np.random.seed(42)
+
+    for i, uname in enumerate(FAKE_USERNAMES):
+        uid = f"user_{i}"
+        users_db[uid] = {
+            'user_id': uid,
+            'username': uname,
+            'display_name': uname.replace('.', ' ').replace('_', ' ').title(),
+            'avatar': generate_avatar_url(uname),
+            'bio': random.choice([
+                "creating cool stuff ✨", "filmmaker 🎬", "visual storyteller",
+                "capturing moments 📸", "just vibes 🌊", "art is life 🎨",
+                "exploring the world 🌍", "content creator", "dreamer & creator",
+            ]),
+            'followers': [],
+            'following': [],
+            'follower_count': 0,
+            'following_count': 0,
+            'liked_videos': [],
+            'watched_videos': [],
+            'category_interests': {},
+            'is_verified': i < 5,
+            'total_likes': 0,
+            'created_at': time.time() - random.randint(86400 * 30, 86400 * 365),
+        }
+
+    for i in range(len(FAKE_USERNAMES)):
+        uid = f"user_{i}"
+        num_following = random.randint(2, 8)
+        possible = [f"user_{j}" for j in range(len(FAKE_USERNAMES)) if j != i]
+        following = random.sample(possible, min(num_following, len(possible)))
+        users_db[uid]['following'] = following
+        users_db[uid]['following_count'] = len(following)
+        for fid in following:
+            users_db[fid]['followers'].append(uid)
+            users_db[fid]['follower_count'] = len(users_db[fid]['followers'])
+
     if not os.path.exists(VIDEOS_DIR):
-        logging.warning(f"Videos directory not found: {VIDEOS_DIR}")
         return
-    
-    for file in os.listdir(VIDEOS_DIR):
-        if file.endswith(".mp4") or file.endswith(".mov"):
-            video_filename = file
-            video_id = os.path.splitext(video_filename)[0]
-            if video_id not in video_embeddings:
-                video_embeddings[video_id] = {
-                    'embedding': None,
-                    'metadata': {
-                        'title': f'Video {video_id}',
-                        'genre': 'Unknown',
-                        'file_path': f'videos/{video_filename}'
-                    }
-                }
-    print(f"Initialized metadata for {len(video_embeddings)} videos")
+
+    video_files = sorted([f for f in os.listdir(VIDEOS_DIR) if f.endswith(('.mp4', '.mov')) and f != 'demo.mov'])
+    for i, filename in enumerate(video_files):
+        vid = os.path.splitext(filename)[0]
+        creator_id = f"user_{i % len(FAKE_USERNAMES)}"
+        category = CATEGORIES[i % len(CATEGORIES)]
+        music = MUSIC_TRACKS[i % len(MUSIC_TRACKS)]
+        description = DESCRIPTIONS[i % len(DESCRIPTIONS)]
+        tags = [f"#{category.lower()}", "#fyp", "#viral",
+                f"#{random.choice(['aesthetic', 'cinematic', 'art', 'creative', 'mood'])}"]
+        video_path = os.path.join(VIDEOS_DIR, filename)
+        duration = get_video_duration(video_path)
+
+        base_views = random.randint(1000, 500000)
+        base_likes = int(base_views * random.uniform(0.05, 0.25))
+        base_comments = int(base_likes * random.uniform(0.05, 0.15))
+        base_shares = int(base_likes * random.uniform(0.02, 0.08))
+
+        engagement_score = (base_likes * 2 + base_comments * 3 + base_shares * 5) / max(base_views, 1)
+
+        videos_db[vid] = {
+            'video_id': vid,
+            'filename': filename,
+            'embedding': None,
+            'creator_id': creator_id,
+            'description': description,
+            'music': music,
+            'category': category,
+            'tags': tags,
+            'duration': duration,
+            'created_at': time.time() - random.randint(3600, 86400 * 14),
+            'liked_by': set(),
+            'stats': {
+                'views': base_views,
+                'likes': base_likes,
+                'comment_count': base_comments,
+                'shares': base_shares,
+                'engagement_score': engagement_score,
+                'total_watch_time': 0,
+                'watch_count': 0,
+                'avg_completion_rate': random.uniform(0.3, 0.9),
+            }
+        }
+
+        num_comments = random.randint(3, 12)
+        for _ in range(num_comments):
+            commenter_id = f"user_{random.randint(0, len(FAKE_USERNAMES) - 1)}"
+            commenter = users_db[commenter_id]
+            comments_db[vid].append({
+                'comment_id': str(uuid.uuid4())[:8],
+                'user_id': commenter_id,
+                'username': commenter['username'],
+                'avatar': commenter['avatar'],
+                'text': random.choice(COMMENT_TEMPLATES),
+                'likes': random.randint(0, 500),
+                'timestamp': time.time() - random.randint(60, 86400 * 7),
+            })
+
+    for uid in list(users_db.keys()):
+        num_likes = random.randint(5, 20)
+        vids = random.sample(list(videos_db.keys()), min(num_likes, len(videos_db)))
+        for vid in vids:
+            videos_db[vid]['liked_by'].add(uid)
+            users_db[uid]['liked_videos'].append(vid)
+            users_db[uid].setdefault('category_interests', {})
+            cat = videos_db[vid].get('category', 'Unknown')
+            users_db[uid]['category_interests'][cat] = users_db[uid]['category_interests'].get(cat, 0) + 1
+
+    print(f"Seeded {len(users_db)} users, {len(videos_db)} videos, {sum(len(c) for c in comments_db.values())} comments")
 
 
-def update_user_embedding(user_id, video_id, interaction_type, value):
-    if video_id not in video_embeddings:
-      return jsonify({'error': 'video_id does not exist'}), 404
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
 
-    file_path = video_embeddings[video_id]['metadata']['file_path']
-    filename = file_path.replace('videos/', '') if file_path.startswith('videos/') else file_path
-    video_path = os.path.join(VIDEOS_DIR, filename)
-    video_embedding = get_video_embedding(video_path)
-    
-    if user_id not in user_embeddings:
-        user_embeddings[user_id] = np.zeros(
-            EMBEDDING_DIM)  
-    old_embedding = user_embeddings[user_id]
+def get_current_user():
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth[7:]
+        uid = auth_tokens.get(token)
+        if uid and uid in users_db:
+            return users_db[uid]
+    uid = request.args.get('user_id') or request.headers.get('X-User-Id')
+    if uid and uid in users_db:
+        return users_db[uid]
+    return None
 
-    if interaction_type == 'watch_time':
-        print(value)
-        update = ALPHA * value * (video_embedding - old_embedding)
 
-    elif interaction_type == 'like':
-        update = ALPHA * (video_embedding - old_embedding)
+def format_count(n):
+    if n >= 1000000:
+        return f"{n / 1000000:.1f}M"
+    if n >= 1000:
+        return f"{n / 1000:.1f}K"
+    return str(n)
 
-    elif interaction_type == 'comment':
-        update = ALPHA * (video_embedding - old_embedding)
 
+# ---------------------------------------------------------------------------
+# API: Auth
+# ---------------------------------------------------------------------------
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    username = data.get('username', '').strip().lower()
+    if not username or len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters'}), 400
+    for u in users_db.values():
+        if u['username'] == username:
+            return jsonify({'error': 'Username taken'}), 409
+    uid = f"user_{len(users_db)}"
+    token = str(uuid.uuid4())
+    users_db[uid] = {
+        'user_id': uid,
+        'username': username,
+        'display_name': data.get('display_name', username.replace('_', ' ').title()),
+        'avatar': generate_avatar_url(username),
+        'bio': '',
+        'followers': [],
+        'following': [],
+        'follower_count': 0,
+        'following_count': 0,
+        'liked_videos': [],
+        'watched_videos': [],
+        'category_interests': {},
+        'is_verified': False,
+        'total_likes': 0,
+        'created_at': time.time(),
+    }
+    auth_tokens[token] = uid
+    return jsonify({'token': token, 'user': _user_response(users_db[uid])})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    username = data.get('username', '').strip().lower()
+    for uid, u in users_db.items():
+        if u['username'] == username:
+            token = str(uuid.uuid4())
+            auth_tokens[token] = uid
+            return jsonify({'token': token, 'user': _user_response(u)})
+    return jsonify({'error': 'User not found'}), 404
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def get_me():
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Not authenticated'}), 401
+    return jsonify(_user_response(user))
+
+
+def _user_response(u):
+    return {
+        'user_id': u['user_id'],
+        'username': u['username'],
+        'display_name': u['display_name'],
+        'avatar': u['avatar'],
+        'bio': u['bio'],
+        'follower_count': u['follower_count'],
+        'following_count': u['following_count'],
+        'is_verified': u.get('is_verified', False),
+        'total_likes': u.get('total_likes', 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# API: Feed
+# ---------------------------------------------------------------------------
+
+@app.route("/api/feed/foryou", methods=["GET"])
+def feed_foryou():
+    user = get_current_user()
+    uid = user['user_id'] if user else None
+    n = int(request.args.get('count', 5))
+    if uid:
+        videos = recommender.get_recommendations(uid, n=n, feed_type='foryou')
     else:
-      return jsonify({'error': 'invalid interaction_type'}), 400
-    user_embeddings[user_id] = old_embedding + update
+        videos = recommender._cold_start_recommendations(n)
+    if user:
+        for v in videos:
+            if v:
+                v['is_liked'] = user['user_id'] in videos_db.get(v['video_id'], {}).get('liked_by', set())
+                v['is_following'] = v['creator']['user_id'] in user.get('following', [])
+    return jsonify(videos)
+
+
+@app.route("/api/feed/following", methods=["GET"])
+def feed_following():
+    user = get_current_user()
+    if not user:
+        return jsonify([])
+    n = int(request.args.get('count', 5))
+    videos = recommender.get_recommendations(user['user_id'], n=n, feed_type='following')
+    for v in videos:
+        if v:
+            v['is_liked'] = user['user_id'] in videos_db.get(v['video_id'], {}).get('liked_by', set())
+            v['is_following'] = True
+    return jsonify(videos)
+
+
+# Also keep legacy endpoints
+@app.route("/random_videos", methods=['GET'])
+def get_random_videos():
+    vids = random.sample(list(videos_db.keys()), min(3, len(videos_db)))
+    return jsonify([recommender._build_video_response(vid) for vid in vids])
 
 
 @app.route("/next_video", methods=['GET'])
 def next_video():
-  user_id = request.args.get('user_id')
-  if not user_id:
-    return jsonify({'error': 'user_id is required'}), 400
-
-  if user_id not in user_embeddings:
-    user_embeddings[user_id] = DEFAULT_EMBEDDING.copy()
-
-  user_embedding = user_embeddings[user_id]
-
-  video_ids = list(video_embeddings.keys())
-  if not video_ids:
+    user_id = request.args.get('user_id', 'guest')
+    if user_id not in users_db:
+        vids = recommender._cold_start_recommendations(1)
+    else:
+        vids = recommender.get_recommendations(user_id, n=1, feed_type='foryou')
+    if vids:
+        return jsonify(vids[0])
     return jsonify({'message': 'No videos available'}), 200
 
-  video_embeds = []
-  processed_video_ids = []
-  for v_id in video_ids:
-    file_path = video_embeddings[v_id]['metadata']['file_path']
-    filename = file_path.replace('videos/', '') if file_path.startswith('videos/') else file_path
-    video_path = os.path.join(VIDEOS_DIR, filename)
-    if os.path.exists(video_path):
-      emb = get_video_embedding(video_path)
-      if emb is not None:
-        video_embeds.append(emb.tolist())
-        processed_video_ids.append(v_id)
-  
-  if not video_embeds:
-    return jsonify({'message': 'No processed videos available'}), 200
 
-  user_embedding = user_embedding.reshape(1, -1) 
-  similarities = cosine_similarity(user_embedding, video_embeds)[0]
+# ---------------------------------------------------------------------------
+# API: Video interactions
+# ---------------------------------------------------------------------------
 
-  sorted_indices = np.argsort(similarities)[::-1]
-  if not len(sorted_indices):
-    return jsonify({'message': 'No recommendations available'}), 200
-  
-  best_video_id = processed_video_ids[sorted_indices[0]]
-  best_score = similarities[sorted_indices[0]]
-  for x in range(len(sorted_indices)):
-     video_index = sorted_indices[x]
-     video_id = processed_video_ids[video_index]
+@app.route("/api/video/<video_id>/like", methods=["POST"])
+def toggle_like(video_id):
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Auth required'}), 401
+    v = videos_db.get(video_id)
+    if not v:
+        return jsonify({'error': 'Video not found'}), 404
+    uid = user['user_id']
+    liked_by = v.setdefault('liked_by', set())
+    if uid in liked_by:
+        liked_by.discard(uid)
+        v['stats']['likes'] = max(v['stats']['likes'] - 1, 0)
+        if video_id in user.get('liked_videos', []):
+            user['liked_videos'].remove(video_id)
+        is_liked = False
+    else:
+        liked_by.add(uid)
+        v['stats']['likes'] += 1
+        user.setdefault('liked_videos', []).append(video_id)
+        recommender.update_user_embedding(uid, video_id, 'like')
+        is_liked = True
+    _update_engagement(video_id)
+    return jsonify({
+        'is_liked': is_liked,
+        'likes': v['stats']['likes'],
+        'likes_formatted': format_count(v['stats']['likes']),
+    })
 
-     if video_id in watched:
-        if x + 1 < len(sorted_indices):
-          next_video_index = sorted_indices[x+1] 
-          best_video_id = processed_video_ids[next_video_index]
-          best_score = similarities[next_video_index]
-        else:
-           return jsonify({'message': 'No recommendations available'}), 200
-        
-     else:
-        best_video_id = video_id
-        best_score = similarities[video_index]
-        break
-  
-  watched.append(best_video_id)
 
-  return jsonify({
-      'video_id': best_video_id,
-      'similarity_score': float(best_score),  
-      'metadata': video_embeddings[best_video_id]['metadata']
-  })
+@app.route("/api/video/<video_id>/comment", methods=["POST"])
+def add_comment(video_id):
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Auth required'}), 401
+    v = videos_db.get(video_id)
+    if not v:
+        return jsonify({'error': 'Video not found'}), 404
+    data = request.get_json()
+    text = data.get('text', '').strip()
+    if not text:
+        return jsonify({'error': 'Comment text required'}), 400
+    comment = {
+        'comment_id': str(uuid.uuid4())[:8],
+        'user_id': user['user_id'],
+        'username': user['username'],
+        'avatar': user['avatar'],
+        'text': text,
+        'likes': 0,
+        'timestamp': time.time(),
+    }
+    comments_db[video_id].append(comment)
+    v['stats']['comment_count'] = len(comments_db[video_id])
+    recommender.update_user_embedding(user['user_id'], video_id, 'comment')
+    _update_engagement(video_id)
+    return jsonify(comment)
+
+
+@app.route("/api/video/<video_id>/comments", methods=["GET"])
+def get_comments(video_id):
+    page = int(request.args.get('page', 0))
+    limit = int(request.args.get('limit', 30))
+    all_comments = sorted(comments_db.get(video_id, []), key=lambda c: c['timestamp'], reverse=True)
+    start = page * limit
+    return jsonify({
+        'comments': all_comments[start:start + limit],
+        'total': len(all_comments),
+        'has_more': start + limit < len(all_comments),
+    })
+
+
+@app.route("/api/video/<video_id>/share", methods=["POST"])
+def share_video(video_id):
+    v = videos_db.get(video_id)
+    if not v:
+        return jsonify({'error': 'Video not found'}), 404
+    v['stats']['shares'] += 1
+    user = get_current_user()
+    if user:
+        recommender.update_user_embedding(user['user_id'], video_id, 'share')
+    _update_engagement(video_id)
+    return jsonify({'shares': v['stats']['shares']})
+
+
+@app.route("/api/video/<video_id>/view", methods=["POST"])
+def record_view(video_id):
+    v = videos_db.get(video_id)
+    if not v:
+        return jsonify({'error': 'Video not found'}), 404
+    v['stats']['views'] += 1
+    data = request.get_json() or {}
+    watch_time = data.get('watch_time', 0)
+    duration = v.get('duration', 10)
+    if watch_time > 0:
+        v['stats']['total_watch_time'] = v['stats'].get('total_watch_time', 0) + watch_time
+        v['stats']['watch_count'] = v['stats'].get('watch_count', 0) + 1
+        if v['stats']['watch_count'] > 0:
+            completion = min(watch_time / max(duration, 1), 1.0)
+            old_avg = v['stats'].get('avg_completion_rate', 0.5)
+            count = v['stats']['watch_count']
+            v['stats']['avg_completion_rate'] = old_avg + (completion - old_avg) / count
+    user = get_current_user()
+    if user:
+        uid = user['user_id']
+        user.setdefault('watched_videos', [])
+        if video_id not in user['watched_videos']:
+            user['watched_videos'].append(video_id)
+        if watch_time > 0:
+            recommender.update_user_embedding(uid, video_id, 'watch_time', min(watch_time / max(duration, 1), 2.0))
+    _update_engagement(video_id)
+    return jsonify({'views': v['stats']['views']})
 
 
 @app.route("/update_interaction", methods=["POST"])
 def update_interaction():
-  data = request.get_json()
-  user_id = data.get('user_id')
-  video_id = data.get('video_id')
-  interaction_type = data.get('interaction_type')
-  value = data.get('value') 
-
-  if not all([user_id, video_id, interaction_type]):
-    return jsonify({'error': 'Missing required parameters'}), 400
-
-  if user_id not in user_interactions:
-    user_interactions[user_id] = {
-        "likes": [],
-        "comments": {},
-        "watch_time": {}
-    }
-
-  if interaction_type == 'like':
-    user_interactions[user_id]['likes'].append(video_id)
-  elif interaction_type == 'comment':
-    user_interactions[user_id]['comments'][video_id] = value
-  elif interaction_type == 'watch_time':
-    user_interactions[user_id]['watch_time'].setdefault(video_id, 0.0)
-    user_interactions[user_id]['watch_time'][video_id] += value
-
-  else:
-    return jsonify({'error': 'invalid interaction_type'}), 400
-  update_user_embedding(user_id, video_id, interaction_type, value)
-  return jsonify({'message': 'Interaction updated successfully'})
+    data = request.get_json()
+    user_id = data.get('user_id')
+    video_id = data.get('video_id')
+    interaction_type = data.get('interaction_type')
+    value = data.get('value', 1)
+    if not all([user_id, video_id, interaction_type]):
+        return jsonify({'error': 'Missing required parameters'}), 400
+    if video_id in videos_db:
+        recommender.update_user_embedding(user_id, video_id, interaction_type, value)
+    return jsonify({'message': 'Interaction updated successfully'})
 
 
-@app.route("/random_videos", methods=['GET'])
-def get_random_videos():
-  if len(video_embeddings) == 0:
-    return jsonify([])
-  
-  selected_videos = random.sample(list(video_embeddings.keys()),
-                                  min(3, len(video_embeddings)))
-  response = []
-  for video_id in selected_videos:
-    video_data = {
-        'video_id': video_id,
-        'metadata': video_embeddings[video_id]['metadata']
-    }
-    response.append(video_data)
+def _update_engagement(video_id):
+    v = videos_db.get(video_id)
+    if not v:
+        return
+    s = v['stats']
+    views = max(s['views'], 1)
+    s['engagement_score'] = (s['likes'] * 2 + s['comment_count'] * 3 + s['shares'] * 5) / views
 
-  return jsonify(response)
- 
+
+# ---------------------------------------------------------------------------
+# API: User / Social
+# ---------------------------------------------------------------------------
+
+@app.route("/api/user/<user_id>", methods=["GET"])
+def get_user(user_id):
+    u = users_db.get(user_id)
+    if not u:
+        return jsonify({'error': 'User not found'}), 404
+    resp = _user_response(u)
+    current = get_current_user()
+    if current:
+        resp['is_following'] = user_id in current.get('following', [])
+    return jsonify(resp)
+
+
+@app.route("/api/user/<user_id>/follow", methods=["POST"])
+def toggle_follow(user_id):
+    current = get_current_user()
+    if not current:
+        return jsonify({'error': 'Auth required'}), 401
+    target = users_db.get(user_id)
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+    if user_id == current['user_id']:
+        return jsonify({'error': 'Cannot follow yourself'}), 400
+    if user_id in current.get('following', []):
+        current['following'].remove(user_id)
+        current['following_count'] = len(current['following'])
+        if current['user_id'] in target.get('followers', []):
+            target['followers'].remove(current['user_id'])
+        target['follower_count'] = len(target.get('followers', []))
+        is_following = False
+    else:
+        current.setdefault('following', []).append(user_id)
+        current['following_count'] = len(current['following'])
+        target.setdefault('followers', []).append(current['user_id'])
+        target['follower_count'] = len(target.get('followers', []))
+        is_following = True
+    return jsonify({
+        'is_following': is_following,
+        'follower_count': target['follower_count'],
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: Search / Discover
+# ---------------------------------------------------------------------------
+
+@app.route("/api/discover", methods=["GET"])
+def discover():
+    q = request.args.get('q', '').strip().lower()
+    if q:
+        results = []
+        for vid, v in videos_db.items():
+            searchable = f"{v.get('description', '')} {v.get('category', '')} {' '.join(v.get('tags', []))}".lower()
+            if q in searchable:
+                results.append(recommender._build_video_response(vid))
+        return jsonify(results[:20])
+    trending = sorted(videos_db.keys(), key=lambda vid: videos_db[vid]['stats']['engagement_score'], reverse=True)
+    return jsonify([recommender._build_video_response(vid) for vid in trending[:20]])
+
+
+# ---------------------------------------------------------------------------
+# Static files
+# ---------------------------------------------------------------------------
 
 @app.route("/videos/<filename>", methods=['GET'])
 def serve_video(filename):
-  print("videos_dir",VIDEOS_DIR,filename)
-  try:
-    return send_from_directory(VIDEOS_DIR,filename)
-  except FileNotFoundError:
-    return jsonify({'error': 'Video not found'}), 404
+    try:
+        return send_from_directory(VIDEOS_DIR, filename)
+    except FileNotFoundError:
+        return jsonify({'error': 'Video not found'}), 404
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-  print("Starting server...")
-  initialize_video_metadata()
-  print("Server ready. Videos will be processed on-demand when needed.")
-  app.run(debug=True, host='0.0.0.0', port=5050)
+    print("Starting Monolith Recommendation Server...")
+    seed_data()
+    print("Server ready.")
+    app.run(debug=True, host='0.0.0.0', port=5050)

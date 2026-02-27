@@ -1,186 +1,149 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { Heart, MessageCircle, Share2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import VideoPlayer from "./video-player"; 
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Feed, Video as VideoAPI, type VideoData, type UserData } from "../lib/api";
+import VideoPlayer from "./video-player";
+import ActionSidebar from "./action-sidebar";
+import VideoOverlay from "./video-overlay";
+import CommentSheet from "./comment-sheet";
+import TopBar from "./top-bar";
+import BottomNav from "./bottom-nav";
 
-interface Video {
-  video_id: string;
-  metadata: {
-    file_path: string;
-    genre?: string; 
-    title?: string;
-  };
-  similarity_score?: number; 
+interface Props {
+  user: UserData;
 }
 
-export default function TikTokFeed() {
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-  const [showComments, setShowComments] = useState(false);
-  const [videoTime, setVideoTime] = useState<{ [videoId: string]: number }>({});
-  const [recommendedVideos, setRecommendedVideos] = useState<Video[]>([]);
+export default function TikTokFeed({ user: _user }: Props) {
+  const [videos, setVideos] = useState<VideoData[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState<"foryou" | "following">("foryou");
+  const [commentVideoId, setCommentVideoId] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastFetchRef = useRef(0);
+  void _user;
 
-  const displayedVideos = useMemo(() => [...videos, ...recommendedVideos], [videos, recommendedVideos]);
+  const fetchVideos = useCallback(async (tab: "foryou" | "following", append = false) => {
+    if (isFetching) return;
+    setIsFetching(true);
+    try {
+      const data = tab === "following" ? await Feed.following(5) : await Feed.forYou(5);
+      const valid = data.filter((v) => v && v.video_id);
+      if (append) {
+        setVideos((prev) => {
+          const existingIds = new Set(prev.map((v) => v.video_id));
+          const newVids = valid.filter((v) => !existingIds.has(v.video_id));
+          return [...prev, ...newVids];
+        });
+      } else {
+        setVideos(valid);
+        setCurrentIndex(0);
+        if (containerRef.current) containerRef.current.scrollTop = 0;
+      }
+    } catch (e) {
+      console.error("Feed fetch error:", e);
+    } finally {
+      setIsFetching(false);
+    }
+  }, [isFetching]);
 
   useEffect(() => {
-    fetchInitialVideos();
+    fetchVideos(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (videos.length > 0 && currentIndex >= videos.length - 2 && !isFetching) {
+      const now = Date.now();
+      if (now - lastFetchRef.current > 1000) {
+        lastFetchRef.current = now;
+        fetchVideos(activeTab, true);
+      }
+    }
+  }, [currentIndex, videos.length, isFetching, activeTab]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    const h = container.clientHeight;
+    const newIdx = Math.round(container.scrollTop / h);
+    if (newIdx !== currentIndex && newIdx >= 0 && newIdx < videos.length) {
+      const prev = videos[currentIndex];
+      if (prev) {
+        VideoAPI.view(prev.video_id, 0).catch(() => {});
+      }
+      setCurrentIndex(newIdx);
+    }
+  }, [currentIndex, videos]);
+
+  const handleLike = useCallback(async (videoId: string) => {
+    try {
+      const res = await VideoAPI.like(videoId);
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.video_id === videoId
+            ? { ...v, is_liked: res.is_liked, stats: { ...v.stats, likes: res.likes } }
+            : v
+        )
+      );
+    } catch (e) {
+      console.error("Like error:", e);
+    }
   }, []);
 
-  useEffect(() => {
-    const totalVideos = videos.length + recommendedVideos.length;
-    if (totalVideos > 0 && currentVideoIndex >= totalVideos - 2 && !isFetching) {
-      fetchNextVideo();
+  const handleTabChange = useCallback((tab: "foryou" | "following") => {
+    if (tab !== activeTab) {
+      setActiveTab(tab);
     }
-  }, [currentVideoIndex, videos.length, recommendedVideos.length, isFetching]);
-
-  const fetchInitialVideos = () => {
-    setIsFetching(true);
-    fetch("http://127.0.0.1:5050/random_videos")  
-      .then((res) => res.json())
-      .then((data) => {
-        setVideos(data);
-        setIsFetching(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching initial videos:", error);
-        setIsFetching(false);
-      });
-  };
-
-  const fetchNextVideo = () => {
-    if (isFetching) return; 
-    setIsFetching(true);
-    fetch("http://127.0.0.1:5050/next_video?user_id=user1")
-      .then((res) => res.json())
-      .then((data) => {
-        setRecommendedVideos((prevVideos) => [...prevVideos, data]);
-        setIsFetching(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching recommended video:", error);
-        setIsFetching(false);
-      });
-  };
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    const scrollPosition = container.scrollTop;
-    const videoHeight = container.clientHeight;
-    const newIndex = Math.round(scrollPosition / videoHeight);
-
-    if (newIndex !== currentVideoIndex && newIndex >= 0 && newIndex < displayedVideos.length) {
-      const prevVideoId = displayedVideos[currentVideoIndex]?.video_id;
-      const timeWatched = prevVideoId ? videoTime[prevVideoId] || 0 : 0;
-
-      if (prevVideoId && timeWatched > 0) { 
-        fetch(`http://127.0.0.1:5050/update_interaction`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: "user1",
-            video_id: prevVideoId,
-            interaction_type: "watch_time",
-            value: timeWatched
-          })
-        })
-        .then(response => {
-          if (!response.ok) {
-            return response.json().then(err => {throw new Error(err.message || 'Failed to update interaction')})
-          }
-          return response.json();
-        })
-        .then(data => {
-          console.log("Interaction update successful:", data);
-          setVideoTime(prev => {
-            const updated = { ...prev };
-            delete updated[prevVideoId];
-            return updated;
-          });
-        })
-        .catch((error) => console.error("Error updating interaction:", error));
-      }
-      
-      setCurrentVideoIndex(newIndex);
-    }
-  };
-
-  const handleTimeUpdate = (videoIndex: number, currentTime: number) => {
-    if (videoIndex >= 0 && videoIndex < displayedVideos.length) {
-      const videoId = displayedVideos[videoIndex].video_id;
-      setVideoTime((prevVideoTime) => ({
-        ...prevVideoTime,
-        [videoId]: currentTime,
-      }));
-    }
-  };
+  }, [activeTab]);
 
   return (
-    <div className="h-[100vh] overflow-y-scroll snap-y snap-mandatory" onScroll={handleScroll}>
-      {displayedVideos.map((video, index) => (
-        <div key={`video-${video.video_id}-${index}`} className="h-full w-full snap-start relative">
-          <VideoPlayer
-            videoSrc={`http://127.0.0.1:5050/${video.metadata.file_path}`}
-            videoId={video.video_id}
-            onTimeUpdate={(currentTime: number) => {
-              handleTimeUpdate(index, currentTime);
-            }}
-            playing={index === currentVideoIndex}  
-          />
-          <div className="absolute bottom-4 left-4 right-12">
-            <p className="font-bold">username</p>
-            <p className="text-sm">{video.metadata.title || "No Title"}</p>
-            <p className="text-sm">{video.metadata.genre || "No Genre"}</p>
+    <div className="h-screen w-screen bg-black relative">
+      <TopBar activeTab={activeTab} onTabChange={handleTabChange} />
+
+      <div
+        ref={containerRef}
+        className="snap-container scrollbar-hide"
+        onScroll={handleScroll}
+      >
+        {videos.map((video, index) => (
+          <div key={`${video.video_id}-${index}`} className="snap-item">
+            <VideoPlayer
+              video={video}
+              active={index === currentIndex}
+              onDoubleTap={() => {
+                if (!video.is_liked) handleLike(video.video_id);
+              }}
+            />
+            <VideoOverlay video={video} />
+            <ActionSidebar
+              video={video}
+              onLike={() => handleLike(video.video_id)}
+              onComment={() => setCommentVideoId(video.video_id)}
+              onShare={() => VideoAPI.share(video.video_id).catch(() => {})}
+            />
           </div>
-          <div className="absolute bottom-20 right-2 flex flex-col items-center space-y-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full bg-gray-800 text-white"
-            >
-              <Heart className="h-6 w-6" />
-            </Button>
-            <span className="text-xs">likes</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full bg-gray-800 text-white"
-              onClick={() => setShowComments(!showComments)}
-            >
-              <MessageCircle className="h-6 w-6" />
-            </Button>
-            <span className="text-xs">comments</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full bg-gray-800 text-white"
-            >
-              <Share2 className="h-6 w-6" />
-            </Button>
-            <span className="text-xs">shares</span>
+        ))}
+
+        {videos.length === 0 && !isFetching && (
+          <div className="snap-item flex items-center justify-center">
+            <p className="text-neutral-500 text-lg">No videos yet</p>
           </div>
-          {showComments && (
-            <div
-              className="absolute bottom-0 left-0 right-0 h-1/2 bg-gray-900 bg-opacity-90 p-4 overflow-y-auto">
-              <h3 className="text-lg font-bold mb-2">Comments</h3>
-              <div className="space-y-2">
-                <p>
-                  <span className="font-bold">commenter1:</span> Great video!
-                </p>
-                <p>
-                  <span className="font-bold">commenter2:</span> Love this
-                  content!
-                </p>
-                <p>
-                  <span className="font-bold">commenter3:</span> Keep it up!
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
+        )}
+
+        {isFetching && videos.length === 0 && (
+          <div className="snap-item flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-white/20 border-t-[#fe2c55] rounded-full animate-spin" />
+          </div>
+        )}
+      </div>
+
+      <BottomNav />
+
+      {commentVideoId && (
+        <CommentSheet
+          videoId={commentVideoId}
+          onClose={() => setCommentVideoId(null)}
+        />
+      )}
     </div>
   );
 }
