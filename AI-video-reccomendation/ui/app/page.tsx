@@ -4,10 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 import { Auth, type UserData } from "./lib/api";
 import TikTokFeed from "./components/tiktok-feed";
 import AuthScreen from "./components/auth-screen";
+import DiscoverPage from "./components/discover-page";
+import ProfilePage from "./components/profile-page";
+import BottomNav from "./components/bottom-nav";
+
+export type ActiveView = "home" | "discover" | "profile";
 
 export default function Home() {
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState<ActiveView>("home");
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("tiktok_token");
@@ -30,6 +37,11 @@ export default function Home() {
     setUser(userData);
   }, []);
 
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  }, []);
+
   if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-black">
@@ -38,9 +50,31 @@ export default function Home() {
     );
   }
 
-  if (!user) {
-    return <AuthScreen onAuth={handleAuth} />;
-  }
+  if (!user) return <AuthScreen onAuth={handleAuth} />;
 
-  return <TikTokFeed user={user} />;
+  return (
+    <div className="h-screen w-screen bg-black relative overflow-hidden">
+      <div className={activeView === "home" ? "block h-full" : "hidden"}>
+        <TikTokFeed user={user} onToast={showToast} />
+      </div>
+      <div className={activeView === "discover" ? "block h-full" : "hidden"}>
+        <DiscoverPage />
+      </div>
+      <div className={activeView === "profile" ? "block h-full" : "hidden"}>
+        <ProfilePage user={user} onLogout={() => {
+          localStorage.removeItem("tiktok_token");
+          localStorage.removeItem("tiktok_user_id");
+          setUser(null);
+        }} />
+      </div>
+
+      <BottomNav active={activeView} onChange={setActiveView} />
+
+      {toast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[100] bg-neutral-800 text-white text-sm px-4 py-2 rounded-full shadow-lg fade-in">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
 }

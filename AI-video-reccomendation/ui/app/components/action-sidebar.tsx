@@ -9,9 +9,10 @@ interface Props {
   onLike: () => void;
   onComment: () => void;
   onShare: () => void;
+  onFollow: () => void;
 }
 
-export default function ActionSidebar({ video, onLike, onComment, onShare }: Props) {
+export default function ActionSidebar({ video, onLike, onComment, onShare, onFollow }: Props) {
   const [likeAnim, setLikeAnim] = useState(false);
 
   const handleLike = () => {
@@ -22,7 +23,7 @@ export default function ActionSidebar({ video, onLike, onComment, onShare }: Pro
 
   return (
     <div className="absolute right-2 bottom-32 flex flex-col items-center gap-5 z-10">
-      {/* Creator avatar */}
+      {/* Creator avatar with follow button */}
       <div className="relative mb-2">
         <div className="w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
           <img
@@ -36,22 +37,27 @@ export default function ActionSidebar({ video, onLike, onComment, onShare }: Pro
             }}
           />
         </div>
-        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 bg-[#fe2c55] rounded-full flex items-center justify-center">
-          <span className="text-white text-xs font-bold">+</span>
-        </div>
+        {!video.is_following && (
+          <button
+            onClick={onFollow}
+            className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 bg-[#fe2c55] rounded-full flex items-center justify-center shadow-lg"
+          >
+            <span className="text-white text-xs font-bold leading-none">+</span>
+          </button>
+        )}
+        {video.is_following && (
+          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 bg-neutral-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-[9px] font-bold">&#10003;</span>
+          </div>
+        )}
       </div>
 
       {/* Like */}
       <button onClick={handleLike} className="flex flex-col items-center gap-1">
         <div className={`w-11 h-11 flex items-center justify-center ${likeAnim ? "like-bounce" : ""}`}>
-          <Heart
-            className={`w-7 h-7 ${video.is_liked ? "text-[#fe2c55] fill-[#fe2c55]" : "text-white"}`}
-            strokeWidth={2}
-          />
+          <Heart className={`w-7 h-7 ${video.is_liked ? "text-[#fe2c55] fill-[#fe2c55]" : "text-white"}`} strokeWidth={2} />
         </div>
-        <span className="text-[11px] text-white/90 font-medium">
-          {formatCount(video.stats.likes)}
-        </span>
+        <span className="text-[11px] text-white/90 font-medium">{formatCount(video.stats.likes)}</span>
       </button>
 
       {/* Comment */}
@@ -59,9 +65,7 @@ export default function ActionSidebar({ video, onLike, onComment, onShare }: Pro
         <div className="w-11 h-11 flex items-center justify-center">
           <MessageCircle className="w-7 h-7 text-white" strokeWidth={2} />
         </div>
-        <span className="text-[11px] text-white/90 font-medium">
-          {formatCount(video.stats.comments)}
-        </span>
+        <span className="text-[11px] text-white/90 font-medium">{formatCount(video.stats.comments)}</span>
       </button>
 
       {/* Bookmark */}
@@ -77,9 +81,7 @@ export default function ActionSidebar({ video, onLike, onComment, onShare }: Pro
         <div className="w-11 h-11 flex items-center justify-center">
           <Share2 className="w-7 h-7 text-white" strokeWidth={2} />
         </div>
-        <span className="text-[11px] text-white/90 font-medium">
-          {formatCount(video.stats.shares)}
-        </span>
+        <span className="text-[11px] text-white/90 font-medium">{formatCount(video.stats.shares)}</span>
       </button>
 
       {/* Music disc */}
