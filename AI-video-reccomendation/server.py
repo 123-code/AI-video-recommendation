@@ -58,7 +58,10 @@ user_item_matrix = defaultdict(lambda: defaultdict(float))  # user_id -> {video_
 CATEGORIES = [
     "Nature", "Urban", "Abstract", "Architecture", "Cinematic",
     "Landscape", "Animals", "Weather", "Ocean", "Space",
-    "Technology", "Art", "Music", "Dance", "Comedy"
+    "Technology", "Art", "Music", "Dance", "Comedy",
+    "Travel", "Food", "Fitness", "Fashion", "DIY",
+    "Education", "Gaming", "Pets", "ASMR", "Satisfying",
+    "Fractal", "Generative", "Gradient", "Retro", "Psychedelic",
 ]
 
 MUSIC_TRACKS = [
@@ -74,6 +77,34 @@ MUSIC_TRACKS = [
     {"name": "Butter", "artist": "BTS"},
     {"name": "Astronaut In The Ocean", "artist": "Masked Wolf"},
     {"name": "Save Your Tears", "artist": "The Weeknd"},
+    {"name": "drivers license", "artist": "Olivia Rodrigo"},
+    {"name": "Watermelon Sugar", "artist": "Harry Styles"},
+    {"name": "Mood", "artist": "24kGoldn"},
+    {"name": "positions", "artist": "Ariana Grande"},
+    {"name": "Dynamite", "artist": "BTS"},
+    {"name": "Savage Love", "artist": "Jason Derulo"},
+    {"name": "Roses (Imanbek Remix)", "artist": "SAINt JHN"},
+    {"name": "Blinding Lights (Remix)", "artist": "The Weeknd"},
+    {"name": "Sunflower", "artist": "Post Malone"},
+    {"name": "Old Town Road", "artist": "Lil Nas X"},
+    {"name": "bad guy", "artist": "Billie Eilish"},
+    {"name": "Don't Start Now", "artist": "Dua Lipa"},
+    {"name": "Circles", "artist": "Post Malone"},
+    {"name": "Roxanne", "artist": "Arizona Zervas"},
+    {"name": "Adore You", "artist": "Harry Styles"},
+    {"name": "Intentions", "artist": "Justin Bieber"},
+    {"name": "Say So", "artist": "Doja Cat"},
+    {"name": "HIGHEST IN THE ROOM", "artist": "Travis Scott"},
+    {"name": "someone you loved", "artist": "Lewis Capaldi"},
+    {"name": "Falling", "artist": "Trevor Daniel"},
+    {"name": "Toosie Slide", "artist": "Drake"},
+    {"name": "Motivation", "artist": "Normani"},
+    {"name": "Therefore I Am", "artist": "Billie Eilish"},
+    {"name": "Laugh Now Cry Later", "artist": "Drake"},
+    {"name": "Rockstar", "artist": "DaBaby"},
+    {"name": "INDUSTRY BABY", "artist": "Lil Nas X"},
+    {"name": "Shivers", "artist": "Ed Sheeran"},
+    {"name": "STAY", "artist": "The Kid LAROI"},
 ]
 
 FAKE_USERNAMES = [
@@ -81,7 +112,28 @@ FAKE_USERNAMES = [
     "cinematic.soul", "pixel.artist", "wave.rider", "sky.chaser",
     "neon.nights", "wild.frames", "dream.catcher", "echo.visual",
     "storm.clips", "golden.hour", "deep.focus", "flow.state",
-    "vibe.check", "mood.board", "raw.footage", "frame.by.frame"
+    "vibe.check", "mood.board", "raw.footage", "frame.by.frame",
+    "aesthetic.edits", "luna.clips", "solar.films", "midnight.reel",
+    "velvet.lens", "cosmic.shots", "crystal.clear", "ember.glow",
+    "frost.bite", "jade.visuals", "karma.content", "lush.life",
+    "marble.media", "nova.edits", "opal.studio", "prism.views",
+    "quartz.films", "ruby.reels", "sage.cinema", "terra.shots",
+    "ultra.vibe", "violet.haze", "winter.mood", "xeno.art",
+    "zen.captures", "amber.tones", "blaze.clips", "cedar.lens",
+    "dusk.films", "eden.visuals", "fern.frames", "glow.reel",
+    "haze.studio", "iris.content", "jasper.media", "koi.captures",
+    "lapis.films", "mist.visuals", "nimbus.art", "onyx.edits",
+    "pearl.lens", "quill.studio", "rain.drops", "stellar.shots",
+    "tide.media", "umbra.films", "vale.visuals", "wren.clips",
+    "yonder.lens", "zephyr.art", "ash.creates", "birch.films",
+    "coral.media", "drift.studio", "elm.visuals", "fjord.lens",
+    "grove.shots", "hazel.clips", "indigo.reel", "juniper.art",
+    "kelp.media", "lotus.films", "moss.studio", "nectar.lens",
+    "orchid.art", "pine.visuals", "reef.clips", "stone.media",
+    "thistle.art", "tundra.films", "vine.studio", "willow.lens",
+    "aurora.shots", "breeze.clips", "canyon.media", "delta.films",
+    "equinox.art", "flame.studio", "glacier.lens", "harbor.shots",
+    "isle.clips", "jetstream.art",
 ]
 
 COMMENT_TEMPLATES = [
@@ -96,6 +148,29 @@ COMMENT_TEMPLATES = [
     "tutorial when??", "the transition 😩🔥", "living for this content",
     "why isn't this viral yet", "absolutely stunning", "crying this is so beautiful",
     "this is exactly what my fyp needed", "legend", "pure talent 🙌",
+    "the way this makes me feel 🥺", "i need more of this content",
+    "new favorite creator tbh", "showed this to everyone i know",
+    "the detail in this is insane", "how is this not on my fyp more",
+    "literally screaming 😭", "this unlocked a core memory",
+    "the algorithm finally did something right", "inject this into my veins",
+    "bro this is CINEMA", "im not okay after watching this",
+    "rent free in my head now", "this is what the internet was made for",
+    "my jaw literally dropped", "ok but the QUALITY",
+    "the talent jumped out", "this deserves an award fr",
+    "crying in the club rn 😭", "never skip this on my fyp",
+    "peak content right here", "the vibe is unmatched ✨",
+    "i felt this in my soul", "alexa play this on repeat",
+    "whoever made this needs a raise", "this is giving everything",
+    "not me watching this 50 times", "the aesthetic is *chefs kiss*",
+    "dropped my phone watching this", "this cured my depression ngl",
+    "taking notes fr fr 📝", "wish i could double like",
+    "my fyp has taste today", "this is so calming omg",
+    "the creativity here is unmatched", "ok now THIS is content",
+    "straight to my saved folder", "i gasped", "no thoughts just vibes",
+    "the color grading tho 🎨", "masterclass in editing",
+    "society if everyone made content like this", "W creator",
+    "this just healed something in me", "the precision 🎯",
+    "god tier content", "i will never recover from this",
 ]
 
 DESCRIPTIONS = [
@@ -109,6 +184,24 @@ DESCRIPTIONS = [
     "another day another masterpiece #content", "the beauty in details #macro",
     "chasing light 🌅 #photography", "found this spot by accident #hidden",
     "can't stop watching this #loop #satisfying", "reality is beautiful #nofilter",
+    "ocean therapy 🌊 #ocean #waves #peaceful", "fractal universe 🌌 #math #art",
+    "when math becomes art #fractal #generative", "living colors #gradient #abstract",
+    "cellular automata are mesmerizing #science", "matrix vibes 💚 #tech #code",
+    "lost in the waves 🌊 #beach #sunset", "fire & ice 🔥❄️ #contrast",
+    "this pattern is hypnotic #satisfying", "infinite zoom #mandelbrot #fractal",
+    "nature's algorithm 🧬 #pattern #organic", "neon dreams #neon #nightlife",
+    "slow motion magic #slowmo #cinematic", "abstract reality #abstract #art",
+    "chasing storms ⛈️ #weather #nature", "underwater world 🐠 #ocean #diving",
+    "city never sleeps 🌃 #nightlife #urban", "pure geometry #pattern #minimal",
+    "this sunset was unreal 🌅 #sunset", "smoke & mirrors 💨 #artistic",
+    "retro vibes only 📺 #retro #vintage", "psychedelic journey 🍄 #trippy",
+    "forest bathing 🌲 #forest #zen", "the algorithm blessed me today #fyp",
+    "aerial perspective 🚁 #drone #aerial", "cozy content ☕ #cozy #comfort",
+    "winter wonderland ❄️ #snow #winter", "spring awakening 🌸 #spring #bloom",
+    "summer energy ☀️ #summer #vibes", "autumn feels 🍂 #fall #autumn",
+    "midnight thoughts 🌙 #night #mood", "dawn patrol 🌅 #sunrise #morning",
+    "visual ASMR #asmr #satisfying #calm", "generative art is the future #ai #art",
+    "the universe is math 🔢 #science", "color theory in action 🎨 #design",
 ]
 
 # ---------------------------------------------------------------------------
@@ -476,9 +569,59 @@ def generate_avatar_url(username):
     return f"https://api.dicebear.com/7.x/avataaars/svg?seed={h}"
 
 
+BIOS = [
+    "creating cool stuff ✨", "filmmaker 🎬", "visual storyteller",
+    "capturing moments 📸", "just vibes 🌊", "art is life 🎨",
+    "exploring the world 🌍", "content creator", "dreamer & creator",
+    "digital artist 🖥️", "chasing sunsets 🌅", "nature lover 🌿",
+    "abstract thinker 🧠", "night owl 🦉", "coffee & creativity ☕",
+    "fractal enthusiast 🔮", "generative art nerd", "pixel perfectionist",
+    "ocean soul 🐚", "mountain life ⛰️", "urban explorer 🏙️",
+    "ambient vibes 🎧", "analog in a digital world", "color theory addict",
+    "shooting in raw 📷", "golden hour chaser", "moody aesthetics",
+    "creative director", "self-taught everything", "less is more",
+    "making things beautiful", "visual poet", "light painter 💡",
+    "minimalist maximizer", "wanderlust 🗺️", "storm chaser ⛈️",
+    "deep sea explorer 🤿", "aerial perspective 🚁", "macro world 🔬",
+    "retro futurist", "vaporwave is not dead", "synthwave lover 🌆",
+]
+
+VIDEO_CATEGORY_MAP = {
+    'pexels_ocean': 'Ocean', 'pexels_sunset': 'Landscape', 'pexels_city': 'Urban',
+    'pexels_forest': 'Nature', 'pexels_rain': 'Weather', 'pexels_clouds': 'Weather',
+    'pexels_neon': 'Urban', 'pexels_waterfall': 'Nature', 'pexels_highway': 'Urban',
+    'pexels_fireworks': 'Cinematic', 'pexels_snow': 'Weather', 'pexels_flower': 'Nature',
+    'pexels_bird': 'Animals', 'pexels_waves': 'Ocean', 'pexels_starry': 'Space',
+    'pexels_autumn': 'Nature', 'pexels_lightning': 'Weather', 'pexels_underwater': 'Ocean',
+    'pexels_coffee': 'Food', 'pexels_train': 'Travel', 'pexels_morning': 'Landscape',
+    'pexels_dandelion': 'Nature', 'pexels_jellyfish': 'Ocean', 'pexels_campfire': 'Nature',
+    'pexels_palm': 'Travel', 'pexels_traffic': 'Urban', 'pexels_galaxy': 'Space',
+    'pexels_butterfly': 'Animals', 'pexels_drone': 'Landscape', 'pexels_northern': 'Nature',
+    'pexels_beach': 'Ocean', 'pexels_road': 'Travel', 'pexels_cat': 'Pets',
+    'pexels_bokeh': 'Abstract', 'pexels_river': 'Nature', 'pexels_night': 'Urban',
+    'pexels_wave_crash': 'Ocean', 'pexels_field': 'Landscape', 'pexels_smoke': 'Abstract',
+    'pexels_cooking': 'Food', 'pexels_timelapse': 'Cinematic',
+    'gen_mandelbrot': 'Fractal', 'gen_life': 'Generative', 'gen_cellauto': 'Generative',
+    'gen_gradient': 'Gradient', 'gen_noise': 'Abstract', 'gen_color_pulse': 'Abstract',
+    'gen_plasma': 'Psychedelic', 'gen_wave': 'Abstract', 'gen_sierpinski': 'Fractal',
+    'gen_testsrc': 'Retro', 'gen_radial': 'Abstract', 'gen_moire': 'Satisfying',
+    'gen_tunnel': 'Psychedelic', 'gen_spiral': 'Psychedelic', 'gen_fire': 'Abstract',
+    'gen_matrix': 'Technology', 'gen_psychedelic': 'Psychedelic',
+    'gen_extra': 'Generative', 'gen_checkerboard': 'Satisfying', 'gen_lissajous': 'Abstract',
+}
+
+def _classify_video(filename):
+    name = os.path.splitext(filename)[0].lower()
+    for prefix, cat in VIDEO_CATEGORY_MAP.items():
+        if name.startswith(prefix):
+            return cat
+    return random.choice(CATEGORIES)
+
+
 def seed_data():
     random.seed(42)
     np.random.seed(42)
+    num_users = len(FAKE_USERNAMES)
 
     for i, uname in enumerate(FAKE_USERNAMES):
         uid = f"user_{i}"
@@ -487,11 +630,7 @@ def seed_data():
             'username': uname,
             'display_name': uname.replace('.', ' ').replace('_', ' ').title(),
             'avatar': generate_avatar_url(uname),
-            'bio': random.choice([
-                "creating cool stuff ✨", "filmmaker 🎬", "visual storyteller",
-                "capturing moments 📸", "just vibes 🌊", "art is life 🎨",
-                "exploring the world 🌍", "content creator", "dreamer & creator",
-            ]),
+            'bio': BIOS[i % len(BIOS)],
             'followers': [],
             'following': [],
             'follower_count': 0,
@@ -499,15 +638,15 @@ def seed_data():
             'liked_videos': [],
             'watched_videos': [],
             'category_interests': {},
-            'is_verified': i < 5,
-            'total_likes': 0,
+            'is_verified': i < 15,
+            'total_likes': random.randint(0, 50000),
             'created_at': time.time() - random.randint(86400 * 30, 86400 * 365),
         }
 
-    for i in range(len(FAKE_USERNAMES)):
+    for i in range(num_users):
         uid = f"user_{i}"
-        num_following = random.randint(2, 8)
-        possible = [f"user_{j}" for j in range(len(FAKE_USERNAMES)) if j != i]
+        num_following = random.randint(3, min(25, num_users - 1))
+        possible = [f"user_{j}" for j in range(num_users) if j != i]
         following = random.sample(possible, min(num_following, len(possible)))
         users_db[uid]['following'] = following
         users_db[uid]['following_count'] = len(following)
@@ -521,20 +660,24 @@ def seed_data():
     video_files = sorted([f for f in os.listdir(VIDEOS_DIR) if f.endswith(('.mp4', '.mov')) and f != 'demo.mov'])
     for i, filename in enumerate(video_files):
         vid = os.path.splitext(filename)[0]
-        creator_id = f"user_{i % len(FAKE_USERNAMES)}"
-        category = CATEGORIES[i % len(CATEGORIES)]
+        creator_id = f"user_{i % num_users}"
+        category = _classify_video(filename)
         music = MUSIC_TRACKS[i % len(MUSIC_TRACKS)]
         description = DESCRIPTIONS[i % len(DESCRIPTIONS)]
         tags = [f"#{category.lower()}", "#fyp", "#viral",
-                f"#{random.choice(['aesthetic', 'cinematic', 'art', 'creative', 'mood'])}"]
+                f"#{random.choice(['aesthetic', 'cinematic', 'art', 'creative', 'mood', 'satisfying', 'trending', 'explore'])}",
+                f"#{random.choice(['foryou', 'discover', 'trending', 'hot'])}"]
         video_path = os.path.join(VIDEOS_DIR, filename)
         duration = get_video_duration(video_path)
 
-        base_views = random.randint(1000, 500000)
-        base_likes = int(base_views * random.uniform(0.05, 0.25))
-        base_comments = int(base_likes * random.uniform(0.05, 0.15))
-        base_shares = int(base_likes * random.uniform(0.02, 0.08))
-
+        is_viral = random.random() < 0.15
+        if is_viral:
+            base_views = random.randint(500000, 5000000)
+        else:
+            base_views = random.randint(500, 500000)
+        base_likes = int(base_views * random.uniform(0.03, 0.30))
+        base_comments = int(base_likes * random.uniform(0.03, 0.20))
+        base_shares = int(base_likes * random.uniform(0.01, 0.10))
         engagement_score = (base_likes * 2 + base_comments * 3 + base_shares * 5) / max(base_views, 1)
 
         videos_db[vid] = {
@@ -547,7 +690,7 @@ def seed_data():
             'category': category,
             'tags': tags,
             'duration': duration,
-            'created_at': time.time() - random.randint(3600, 86400 * 14),
+            'created_at': time.time() - random.randint(3600, 86400 * 30),
             'liked_by': set(),
             'stats': {
                 'views': base_views,
@@ -557,13 +700,13 @@ def seed_data():
                 'engagement_score': engagement_score,
                 'total_watch_time': 0,
                 'watch_count': 0,
-                'avg_completion_rate': random.uniform(0.3, 0.9),
+                'avg_completion_rate': random.uniform(0.3, 0.95),
             }
         }
 
-        num_comments = random.randint(3, 12)
+        num_comments = random.randint(5, 25)
         for _ in range(num_comments):
-            commenter_id = f"user_{random.randint(0, len(FAKE_USERNAMES) - 1)}"
+            commenter_id = f"user_{random.randint(0, num_users - 1)}"
             commenter = users_db[commenter_id]
             comments_db[vid].append({
                 'comment_id': str(uuid.uuid4())[:8],
@@ -571,12 +714,12 @@ def seed_data():
                 'username': commenter['username'],
                 'avatar': commenter['avatar'],
                 'text': random.choice(COMMENT_TEMPLATES),
-                'likes': random.randint(0, 500),
-                'timestamp': time.time() - random.randint(60, 86400 * 7),
+                'likes': random.randint(0, 2000),
+                'timestamp': time.time() - random.randint(60, 86400 * 14),
             })
 
     for uid in list(users_db.keys()):
-        num_likes = random.randint(5, 20)
+        num_likes = random.randint(10, min(50, len(videos_db)))
         vids = random.sample(list(videos_db.keys()), min(num_likes, len(videos_db)))
         for vid in vids:
             videos_db[vid]['liked_by'].add(uid)
@@ -585,7 +728,8 @@ def seed_data():
             cat = videos_db[vid].get('category', 'Unknown')
             users_db[uid]['category_interests'][cat] = users_db[uid]['category_interests'].get(cat, 0) + 1
 
-    print(f"Seeded {len(users_db)} users, {len(videos_db)} videos, {sum(len(c) for c in comments_db.values())} comments")
+    total_comments = sum(len(c) for c in comments_db.values())
+    print(f"Seeded {len(users_db)} users, {len(videos_db)} videos, {total_comments} comments")
 
 
 # ---------------------------------------------------------------------------
