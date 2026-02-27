@@ -20,6 +20,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+from generation import GenerationPipeline, InterestProfiler
+from generation.config import GenerationConfig
+
 app = Flask(__name__)
 CORS(app)
 
@@ -560,6 +565,16 @@ class MonolithRecommender:
 
 recommender = MonolithRecommender()
 
+gen_config = GenerationConfig(
+    enabled=True,
+    provider="stub",
+    generated_content_ratio=0.15,
+    num_user_clusters=8,
+    cluster_pool_target=10,
+    budget_per_cluster_per_hour=5,
+)
+gen_pipeline = GenerationPipeline(gen_config, VIDEOS_DIR)
+
 # ---------------------------------------------------------------------------
 # Seed data
 # ---------------------------------------------------------------------------
@@ -838,13 +853,33 @@ def feed_foryou():
     n = int(request.args.get('count', 5))
     if uid:
         videos = recommender.get_recommendations(uid, n=n, feed_type='foryou')
+        # Blend in generated content based on configured ratio
+        if gen_config.enabled:
+            gen_pipeline.tick(users_db, videos_db)
+            num_gen = max(1, int(n * gen_config.generated_content_ratio))
+            gen_videos = gen_pipeline.get_generated_for_user(uid, users_db, videos_db, n=num_gen)
+            for gv in gen_videos:
+                gv['is_generated'] = True
+                gv['is_liked'] = False
+                gv['is_following'] = False
+                if 'stats' not in gv:
+                    gv['stats'] = {'views': 0, 'likes': 0, 'comments': 0, 'shares': 0}
+                if 'creator' not in gv:
+                    gv['creator'] = {'user_id': 'ai', 'username': 'ai.generator', 'display_name': 'AI Generator', 'avatar': '', 'is_verified': True}
+                if 'music' not in gv:
+                    gv['music'] = {'name': 'AI Generated', 'artist': 'Neural Network'}
+            # Insert generated videos at spaced positions in the feed
+            for i, gv in enumerate(gen_videos):
+                pos = min((i + 1) * 3, len(videos))
+                videos.insert(pos, gv)
     else:
         videos = recommender._cold_start_recommendations(n)
     if user:
         for v in videos:
             if v:
-                v['is_liked'] = user['user_id'] in videos_db.get(v['video_id'], {}).get('liked_by', set())
-                v['is_following'] = v['creator']['user_id'] in user.get('following', [])
+                v.setdefault('is_liked', user['user_id'] in videos_db.get(v.get('video_id', ''), {}).get('liked_by', set()))
+                v.setdefault('is_following', v.get('creator', {}).get('user_id', '') in user.get('following', []))
+                v.setdefault('is_generated', False)
     return jsonify(videos)
 
 
@@ -1100,8 +1135,46 @@ def serve_video(filename):
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# API: Generation Pipeline
+# ---------------------------------------------------------------------------
+
+@app.route("/api/generation/status", methods=["GET"])
+def generation_status():
+    return jsonify(gen_pipeline.get_pipeline_status())
+
+
+@app.route("/api/generation/profile/<user_id>", methods=["GET"])
+def generation_profile(user_id):
+    """Get interest profile and what prompt would be generated for this user."""
+    return jsonify(gen_pipeline.compose_prompt_preview(user_id, users_db, videos_db))
+
+
+@app.route("/api/generation/trigger", methods=["POST"])
+def generation_trigger():
+    """Manually trigger a generation tick (for testing/development)."""
+    gen_pipeline.tick(users_db, videos_db)
+    return jsonify(gen_pipeline.get_pipeline_status())
+
+
+@app.route("/api/generation/preview", methods=["GET"])
+def generation_preview():
+    """Preview generated videos available for the current user."""
+    user = get_current_user()
+    if not user:
+        return jsonify([])
+    videos = gen_pipeline.get_generated_for_user(user['user_id'], users_db, videos_db, n=5)
+    return jsonify(videos)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 if __name__ == '__main__':
     print("Starting Monolith Recommendation Server...")
     seed_data()
+    gen_pipeline.initialize(users_db, videos_db)
+    print(f"Generation pipeline: {gen_pipeline.get_pipeline_status()['num_clusters']} user clusters")
     print("Server ready.")
     app.run(debug=True, host='0.0.0.0', port=5050)

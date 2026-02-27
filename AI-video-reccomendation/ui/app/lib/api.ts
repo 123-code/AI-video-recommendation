@@ -45,6 +45,7 @@ export interface VideoData {
   created_at: number;
   is_liked?: boolean;
   is_following?: boolean;
+  is_generated?: boolean;
 }
 
 export interface UserData {
@@ -148,3 +149,10 @@ export function timeAgo(ts: number): string {
 export function videoUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
+
+export const Generation = {
+  status: () => api<Record<string, unknown>>("/api/generation/status"),
+  profile: (userId: string) => api<Record<string, unknown>>(`/api/generation/profile/${userId}`),
+  trigger: () => api<Record<string, unknown>>("/api/generation/trigger", { method: "POST" }),
+  preview: () => api<VideoData[]>("/api/generation/preview"),
+};

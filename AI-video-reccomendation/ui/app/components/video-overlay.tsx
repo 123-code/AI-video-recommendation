@@ -11,6 +11,12 @@ export default function VideoOverlay({ video }: Props) {
   return (
     <div className="absolute bottom-0 left-0 right-16 pointer-events-none pb-20">
       <div className="video-gradient-bottom px-4 pt-24 pb-4 space-y-2">
+        {video.is_generated && (
+          <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-purple-500/80 to-pink-500/80 rounded-full text-[10px] font-medium backdrop-blur-sm mb-1">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61z"/></svg>
+            Made for you
+          </div>
+        )}
         <div className="flex items-center gap-1">
           <span className="font-bold text-[15px]">@{video.creator.username}</span>
           {video.creator.is_verified && (
